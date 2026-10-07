@@ -1,4 +1,4 @@
-name: CI Pipeline (Quality Gate & DoD)
+name: CI Pipeline
 
 on:
   push:
@@ -27,32 +27,19 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Проверка наличия исходного кода
-        id: check_code
+      - name: Проверка кода и запуск проверок
         run: |
           if [ -f requirements.txt ]; then
-            echo "has_code=true" >> 
             python -m pip install --upgrade pip
             pip install -r requirements.txt
             pip install flake8 pytest pytest-cov
+            flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+            flake8 . --count --max-complexity=10 --max-line-length=120 --statistics
+            if [ -d tests ]; then
+              pytest tests/ --cov=app/services --cov-report=term-missing --cov-fail-under=60
+            fi
           else
-            echo "has_code=false" >> 
             echo "Модуль backend не содержит requirements.txt. Пропуск этапа."
-          fi
-
-      - name: Проверка стиля кода (Flake8 — требование DoD)
-        if: steps.check_code.outputs.has_code == 'true'
-        run: |
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 . --count --max-complexity=10 --max-line-length=120 --statistics
-
-      - name: Модульные тесты и контроль покрытия (Pytest Coverage >= 60% — требование DoD)
-        if: steps.check_code.outputs.has_code == 'true'
-        run: |
-          if [ -d tests ]; then
-            pytest tests/ --cov=app/services --cov-report=term-missing --cov-fail-under=60
-          else
-            echo "Каталог tests/ еще не создан. Пропуск тестов."
           fi
 
   # =============================================================
@@ -74,7 +61,7 @@ jobs:
         with:
           node-version: 18
 
-      - name: Проверка наличия кода, линтинг (ESLint) и тестовая сборка
+      - name: Проверка наличия кода, линтинг и сборка
         run: |
           if [ -f package.json ]; then
             npm ci || npm install
@@ -88,7 +75,7 @@ jobs:
   # 3. Сервис классификации дефектов (ML Service / Python)
   # =============================================================
   ml-ci:
-    name: ML Service (Linting & Inference Checks)
+    name: ML Service (Linting & Checks)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -104,29 +91,22 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Проверка наличия кода и зависимостей ML
-        id: check_ml
+      - name: Проверка кода ML-сервиса
         run: |
           if [ -f requirements.txt ]; then
-            echo "has_code=true" >> 
             python -m pip install --upgrade pip
             pip install -r requirements.txt
             pip install flake8 pytest
+            flake8 . --count --max-complexity=10 --max-line-length=120 --statistics
           else
-            echo "has_code=false" >> 
             echo "Модуль ml_service не содержит requirements.txt. Пропуск этапа."
           fi
-
-      - name: Проверка стиля кода ML-сервиса (Flake8)
-        if: steps.check_ml.outputs.has_code == 'true'
-        run: |
-          flake8 . --count --max-complexity=10 --max-line-length=120 --statistics
 
   # =============================================================
   # 4. Мобильное приложение гражданина (Android / Kotlin)
   # =============================================================
   mobile-ci:
-    name: Mobile Android (Ktlint & Build Check)
+    name: Mobile Android (Ktlint & Build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -136,13 +116,13 @@ jobs:
       - name: Скачивание репозитория
         uses: actions/checkout@v4
 
-      - name: Настройка среды Java 17 (JDK)
+      - name: Настройка среды Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Проверка наличия проекта Gradle и компиляция APK
+      - name: Проверка проекта Gradle
         run: |
           if [ -f gradlew ]; then
             chmod +x gradlew
