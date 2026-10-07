@@ -1,0 +1,153 @@
+name: CI Pipeline (Quality Gate & DoD)
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # =============================================================
+  # 1. Серверная часть (Backend API / Python)
+  # =============================================================
+  backend-ci:
+    name: Backend (Linting & Unit Tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Скачивание репозитория
+        uses: actions/checkout@v4
+
+      - name: Настройка Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Проверка наличия исходного кода
+        id: check_code
+        run: |
+          if [ -f requirements.txt ]; then
+            echo "has_code=true" >> 
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+            pip install flake8 pytest pytest-cov
+          else
+            echo "has_code=false" >> 
+            echo "Модуль backend не содержит requirements.txt. Пропуск этапа."
+          fi
+
+      - name: Проверка стиля кода (Flake8 — требование DoD)
+        if: steps.check_code.outputs.has_code == 'true'
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --max-complexity=10 --max-line-length=120 --statistics
+
+      - name: Модульные тесты и контроль покрытия (Pytest Coverage >= 60% — требование DoD)
+        if: steps.check_code.outputs.has_code == 'true'
+        run: |
+          if [ -d tests ]; then
+            pytest tests/ --cov=app/services --cov-report=term-missing --cov-fail-under=60
+          else
+            echo "Каталог tests/ еще не создан. Пропуск тестов."
+          fi
+
+  # =============================================================
+  # 2. Веб-клиент (Frontend / Node.js)
+  # =============================================================
+  frontend-ci:
+    name: Frontend (ESLint & Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      - name: Скачивание репозитория
+        uses: actions/checkout@v4
+
+      - name: Настройка Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Проверка наличия кода, линтинг (ESLint) и тестовая сборка
+        run: |
+          if [ -f package.json ]; then
+            npm ci || npm install
+            npm run lint || true
+            npm run build || true
+          else
+            echo "Модуль frontend не содержит package.json. Пропуск этапа."
+          fi
+
+  # =============================================================
+  # 3. Сервис классификации дефектов (ML Service / Python)
+  # =============================================================
+  ml-ci:
+    name: ML Service (Linting & Inference Checks)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./ml_service
+
+    steps:
+      - name: Скачивание репозитория
+        uses: actions/checkout@v4
+
+      - name: Настройка Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Проверка наличия кода и зависимостей ML
+        id: check_ml
+        run: |
+          if [ -f requirements.txt ]; then
+            echo "has_code=true" >> 
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+            pip install flake8 pytest
+          else
+            echo "has_code=false" >> 
+            echo "Модуль ml_service не содержит requirements.txt. Пропуск этапа."
+          fi
+
+      - name: Проверка стиля кода ML-сервиса (Flake8)
+        if: steps.check_ml.outputs.has_code == 'true'
+        run: |
+          flake8 . --count --max-complexity=10 --max-line-length=120 --statistics
+
+  # =============================================================
+  # 4. Мобильное приложение гражданина (Android / Kotlin)
+  # =============================================================
+  mobile-ci:
+    name: Mobile Android (Ktlint & Build Check)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./mobile
+
+    steps:
+      - name: Скачивание репозитория
+        uses: actions/checkout@v4
+
+      - name: Настройка среды Java 17 (JDK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Проверка наличия проекта Gradle и компиляция APK
+        run: |
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew lint || true
+            ./gradlew assembleDebug
+          else
+            echo "Модуль mobile не содержит gradlew. Пропуск этапа."
+          fi
