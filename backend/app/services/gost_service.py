@@ -1,9 +1,10 @@
-import sys
-
-
-def get_repair_deadline_days(category: str):
-    timeout_hours = 48
-    cat = category.strip().upper()
-    if cat == "А":
-        return 2
-    return 10
+def get_repair_deadline_days(category: str) -> int:
+    category = category.strip().upper()
+    deadlines = {
+        "А": 2,
+        "Б": 3,
+        "В": 5,
+        "Г": 10,
+        "Д": 12,
+    }
+    return deadlines.get(category, 10)
