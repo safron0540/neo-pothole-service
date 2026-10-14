@@ -2,48 +2,143 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
+  workflow_dispatch:
+
+# Токен только на чтение: CI ничего не пишет в репозиторий
+permissions:
+  contents: read
+
+# Новый пуш в тот же PR отменяет старый запуск; запуски на main не отменяются
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Значения для CI: настоящих секретов здесь нет
+env:
+  DATABASE_URL: postgresql+psycopg://app:app@localhost:5432/potholes
+  JWT_SECRET: ci-only-secret
+  JWT_ACCESS_MINUTES: '30'
+  JWT_REFRESH_DAYS: '14'
+  PHOTOS_DIR: /tmp/photos
+  ML_URL: http://localhost:8001
+  ML_TIMEOUT_SECONDS: '8'
 
 jobs:
+  # 1. Backend: стиль и быстрые тесты (без базы)
   backend-ci:
-    name: Backend (Ruff & Pytest)
+    name: Backend (Ruff & unit tests)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ./backend
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
-      - name: Run linting and unit tests
+      - name: Lint and unit tests
         run: |
           if [ -f requirements.txt ]; then
             python -m pip install --upgrade pip
             pip install -r requirements.txt
-            pip install ruff pytest pytest-cov
+            if [ -f requirements-dev.txt ]; then
+              pip install -r requirements-dev.txt
+            else
+              pip install ruff pytest pytest-cov
+            fi
             ruff check .
             ruff format --check .
             if [ -d tests ]; then
-              pytest -m "not integration and not e2e and not slow" --cov=app/core --cov=app/services --cov-report=term-missing --cov-fail-under=60
+              # код 5 = «тестов не найдено»: допустимо, пока тестов нет
+              pytest -m "not integration and not e2e and not slow" \
+                --cov=app --cov-report=term-missing --cov-fail-under=60 \
+                || [ $? -eq 5 ]
             fi
           else
             echo "requirements.txt not found in ./backend. Skipping."
           fi
 
+  # 2. Backend: миграции и тесты с PostGIS
+  backend-integration:
+    name: Backend (PostGIS, migrations, integration tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ./backend
+    services:
+      db:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: potholes
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d potholes"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Migrations and integration tests
+        run: |
+          if [ -f requirements.txt ] && [ -f alembic.ini ]; then
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+            if [ -f requirements-dev.txt ]; then
+              pip install -r requirements-dev.txt
+            else
+              pip install pytest
+            fi
+            alembic upgrade head
+            alembic check
+            # проверка отката последней миграции: схема должна подниматься заново
+            alembic downgrade -1
+            alembic upgrade head
+            pytest -m "integration or e2e" || [ $? -eq 5 ]
+          else
+            echo "requirements.txt or alembic.ini not found in ./backend. Skipping."
+          fi
+
+  # 3. Образы Docker: backend и ML-сервис собираются
+  docker-build:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: |
+          for svc in backend ml_service; do
+            if [ -f "$svc/Dockerfile" ]; then
+              docker build -t "potholes-$svc" "$svc"
+            else
+              echo "$svc/Dockerfile not found. Skipping."
+            fi
+          done
+
+  # 4. Веб-клиент
   frontend-ci:
     name: Frontend (ESLint & Build)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ./frontend
-
     steps:
       - uses: actions/checkout@v4
 
@@ -56,45 +151,50 @@ jobs:
         run: |
           if [ -f package.json ]; then
             npm ci || npm install
-            npm run lint || true
-            npm run build || true
+            npm run lint --if-present
+            npm run build --if-present
           else
             echo "package.json not found in ./frontend. Skipping."
           fi
 
+  # 5. ML-сервис
   ml-ci:
-    name: ML Service (Ruff Linting)
+    name: ML Service (Ruff & tests)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: ./ml_service
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
-      - name: Run linting
+      - name: Run linting and tests
         run: |
           if [ -f requirements.txt ]; then
             python -m pip install --upgrade pip
             pip install -r requirements.txt
             pip install ruff pytest
             ruff check .
+            if [ -d tests ]; then
+              pytest || [ $? -eq 5 ]
+            fi
           else
             echo "requirements.txt not found in ./ml_service. Skipping."
           fi
 
+  # 6. Мобильное приложение
   mobile-ci:
-    name: Mobile Android (Ktlint & Build)
+    name: Mobile Android (Lint & Build)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: ./mobile
-
     steps:
       - uses: actions/checkout@v4
 
@@ -114,15 +214,32 @@ jobs:
             echo "gradlew not found in ./mobile. Skipping."
           fi
 
+  # 7. Единый итог: в защите ветки main достаточно требовать только эту проверку
+  ci-gate:
+    name: CI gate
+    runs-on: ubuntu-latest
+    needs: [backend-ci, backend-integration, docker-build, frontend-ci, ml-ci, mobile-ci]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          echo '${{ toJSON(needs) }}'
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "One or more jobs failed or were cancelled."
+            exit 1
+          fi
+
+  # 8. Деплой на сервер: только после слияния в main и зелёного ci-gate
   deploy:
     name: Deploy to Server (CD)
     runs-on: ubuntu-latest
-    needs: [backend-ci, frontend-ci, ml-ci, mobile-ci]
-    if: github.ref == 'refs/heads/main'
-
+    needs: [ci-gate]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 15
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -130,14 +247,38 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
           script: |
+            set -euo pipefail
             cd /workspace
-            git pull origin main || true
+            git pull --ff-only origin main
             if [ -f deploy.sh ]; then
-              chmod +x deploy.sh
-              ./deploy.sh
-            elif [ -f docker-compose.yml ]; then
-              docker compose up -d --build
+              bash deploy.sh
             else
-              echo "No deploy.sh or docker-compose.yml found in /workspace."
+              echo "deploy.sh not found in /workspace. Nothing to deploy."
+              exit 0
             fi
+
+            # Дальше шаги, которых нет в серверном deploy.sh
+            [ -f docker-compose.yml ] || exit 0
+
+            # Миграции: только если backend уже собран с Alembic
+            if docker compose exec -T backend test -f alembic.ini 2>/dev/null; then
+              docker compose exec -T backend alembic upgrade head
+            fi
+
+            # Проверка /health (порт из .env, по умолчанию 8000)
+            port="$( { grep -E '^BACKEND_PORT=' .env 2>/dev/null || true; } | tail -n1 | cut -d= -f2 )"
+            url="http://localhost:${port:-8000}/health"
+            ok=0
+            for _ in $(seq 1 15); do
+              if curl -fsS "$url" > /dev/null; then ok=1; break; fi
+              sleep 4
+            done
+            docker compose ps
+            if [ "$ok" -ne 1 ]; then
+              docker compose logs --tail=50 backend || true
+              echo "Health check failed: $url"
+              exit 1
+            fi
+            docker image prune -f > /dev/null
