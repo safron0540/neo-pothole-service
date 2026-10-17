@@ -9,6 +9,19 @@ ml_service/ — сервис классификации дефектов дор�
 infra/ — конфигурация Nginx и базы данных PostgreSQL
 tests/ — тестовый контур (smoke-тесты, коллекции Apache JMeter)
 
+## Запуск одной командой (Docker)
+
+Нужен Docker с Compose. Поднимаются база (PostgreSQL 16 + PostGIS) и backend.
+
+```bash
+cp .env.example .env                 # один раз; Windows PowerShell: copy .env.example .env
+docker compose up -d --build
+docker compose ps                    # db и backend в состоянии healthy
+curl http://localhost:8000/api/v1/health   # Windows PowerShell: curl.exe
+```
+
+Swagger: http://localhost:8000/api/docs. Остановить: `docker compose down` (данные базы сохраняются в томе `pgdata`; удалить их: `docker compose down -v`).
+
 ## Запуск backend локально
 
 Нужен Python 3.12.
