@@ -157,6 +157,7 @@
 | Телефон              | phone    | varchar(16)                   |                 | Вводит диспетчер, хранится в формате E.164 (+79131234567)                                                                                                                                    |
 | Электронная почта    | email    | varchar(254)                  |                 | Вводит диспетчер                                                                                                                                                                             |
 | Зона обслуживания    | zone     | geography(MultiPolygon, 4326) | NULL, GiST      | GeoJSON от диспетчера; API проверяет корректность и что зона не пересекается с чужими **\[D\]**. Пусто: подрядчик не назначается автоматически. Новая зона действует только для новых заявок |
+| Активен              | is_active | boolean                      | DEF true        | Диспетчер снимает признак, когда договор расторгнут: подрядчик не участвует в автоназначении и не выбирается вручную, история заявок остаётся **\[D\]** (В-7) |
 
 ### 4.2 Пользователи и доступ
 
@@ -255,6 +256,7 @@ FCM-токены телефонов для push-уведомлений, этап
 | Источник класса             | class_source      | varchar(10)            | CHECK                    | model, citizen или dispatcher; меняется вместе с классом                                                  |
 | Количество ям               | pits_count        | int                    | DEF 1, CHECK ≥ 1         | От модели; 1, если класс выбран вручную                                                                   |
 | Статус                      | status            | varchar(20)            | DEF «На проверке», CHECK | Меняет только функция change_status() (раздел 11)                                                         |
+| Причина отклонения          | reject_reason     | varchar(10)            | NULL, CHECK              | small_pit, not_a_pit, duplicate или other; выбирает диспетчер при «Отклонено». В плановый ремонт идут только small_pit **\[D\]** (В-2) |
 | Комментарий к решению       | decision_comment  | text                   | NULL                     | Пишет диспетчер: причина отклонения (обязательна) или что уточняется                                      |
 | Комментарий гражданина      | citizen_comment   | text                   | NULL                     | Из формы подачи (REQ-023). Не меняется                                                                    |
 | Момент обнаружения          | detected_at       | timestamptz            | DEF now()                | Время регистрации заявки; по ГОСТ от него считается срок. Не меняется                                     |
@@ -267,7 +269,7 @@ FCM-токены телефонов для push-уведомлений, этап
 | Версия                      | version           | int                    | DEF 1                    | +1 при каждом изменении; клиент присылает её в действиях диспетчера (защита от одновременной правки)      |
 | Дата изменения              | updated_at        | timestamptz            | DEF now()                | Ставит триггер set_updated_at                                                                             |
 
-**CHECK:** заявка не ссылается сама на себя (duplicate_of_id \<\> id, merged_into_id \<\> id); в статусе «В работе» заполнен contractor_id; в статусе «Выполнено» заполнены after_photo_id и completed_at. Два последних правила не действуют для слитых заявок: их статус повторяет основную, а фото «после» берётся у неё.
+**CHECK:** заявка не ссылается сама на себя (duplicate_of_id \<\> id, merged_into_id \<\> id); в статусе «В работе» заполнен contractor_id; в статусе «Выполнено» заполнены after_photo_id и completed_at; в статусах «Принято», «В работе», «Выполнено» заполнен planned_due_at, то есть без группы улицы заявку не принять **\[D\]** (В-3). Три последних правила не действуют для слитых заявок: их статус повторяет основную, а фото «после» берётся у неё.
 
 **Не меняются после создания** (триггер forbid_requests_immutable): author_id, client_request_id, detected_at, before_photo_id.
 
@@ -552,10 +554,10 @@ context.configure(
 
 | **Миграция**            | **Что делает**                                                                                                                                                 |
 |-------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 0001_postgis            | CREATE EXTENSION IF NOT EXISTS postgis                                                                                                                         |
+| 0001_postgis            | CREATE EXTENSION IF NOT EXISTS postgis. Откат расширение не удаляет: в образе postgis/postgis от него зависят postgis_topology и postgis_tiger_geocoder        |
 | 0002_reference          | districts, street_groups, streets, buildings, contractors и их индексы                                                                                         |
 | 0003_users              | users, citizens, contractor_users, user_consents, refresh_tokens, device_tokens; триггер check_user_role                                                       |
-| 0004_requests           | photos, requests, request_events, internal_notes, notifications, planned_repair_proposals; CHECK, индексы, триггеры set_updated_at и forbid_requests_immutable |
+| 0004_requests           | photos, requests, request_events, internal_notes, notifications, planned_repair_proposals; CHECK, индексы, триггеры set_updated_at и forbid_requests_immutable; contractors.is_active и requests.reject_reason **\[D\]** |
 | 0005_seed_street_groups | Данные групп А–Е                                                                                                                                               |
 
 ### Правила
@@ -569,6 +571,10 @@ context.configure(
 4.  Имена ограничений задаются через naming_convention в MetaData, чтобы они совпадали на всех машинах.
 
 5.  CI на каждом PR поднимает пустую базу, выполняет alembic upgrade head и alembic check (модели совпадают с миграциями).
+
+6.  Миграции работают только со схемой public (`SET search_path TO public` в env.py): образ postgis/postgis кладёт в search_path схемы tiger и topology, и без этого alembic check предлагает удалить их служебные таблицы.
+
+7.  GiST-индексы объявляются явно (`Index(..., postgresql_using="gist")`, `spatial_index=False` у колонки), чтобы их имена задавала naming_convention.
 
 ## 15. Изменения и Приложение 2 ЧТЗ
 
