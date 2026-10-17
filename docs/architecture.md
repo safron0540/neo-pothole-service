@@ -460,9 +460,9 @@ neo-pothole-service/
 cp .env.example .env
 docker compose up -d --build
 docker compose exec backend alembic upgrade head
-docker compose exec backend python scripts/load_streets.py
-docker compose exec backend python scripts/load_buildings.py
-docker compose exec backend python scripts/seed_demo.py
+docker compose exec backend python -m scripts.load_streets
+docker compose exec backend python -m scripts.load_buildings
+docker compose exec backend python -m scripts.seed_demo
 ```
 
 ### 12.3 Фоновые задачи, копии и мониторинг
