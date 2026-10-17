@@ -9,3 +9,6 @@ sqlalchemy==2.1.5
 psycopg[binary]==3.3.6
 alembic==1.20.0
 geoalchemy2==0.20.0
+
+# Хэш паролей (БЗ-2); пока нужен seed_demo.py, дальше — вход в PR 2-2
+argon2-cffi==25.1.0
