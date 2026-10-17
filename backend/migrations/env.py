@@ -10,7 +10,10 @@ from alembic import context
 from geoalchemy2 import alembic_helpers
 from sqlalchemy import create_engine, pool
 
-import app.modules.geo.models  # noqa: F401  (регистрирует таблицы в Base.metadata)
+# Импорт моделей регистрирует их таблицы в Base.metadata
+import app.modules.auth.models  # noqa: F401
+import app.modules.geo.models  # noqa: F401
+import app.modules.notifications.models  # noqa: F401
 from app.config import get_settings
 from app.db import Base
 
