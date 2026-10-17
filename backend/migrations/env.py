@@ -13,7 +13,10 @@ from sqlalchemy import create_engine, pool
 # Импорт моделей регистрирует их таблицы в Base.metadata
 import app.modules.auth.models  # noqa: F401
 import app.modules.geo.models  # noqa: F401
+import app.modules.media.models  # noqa: F401
 import app.modules.notifications.models  # noqa: F401
+import app.modules.planned_repair.models  # noqa: F401
+import app.modules.requests.models  # noqa: F401
 from app.config import get_settings
 from app.db import Base
 
