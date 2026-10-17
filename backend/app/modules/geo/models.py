@@ -7,6 +7,7 @@ geography (SRID 4326), поэтому расстояния в запросах �
 from geoalchemy2 import Geography
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     ForeignKey,
     Identity,
@@ -14,6 +15,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    true,
 )
 from sqlalchemy.dialects.postgresql import CHAR
 from sqlalchemy.orm import Mapped, mapped_column
@@ -89,3 +91,5 @@ class Contractor(Base):
     email: Mapped[str] = mapped_column(String(254))
     # Пусто: подрядчик не назначается автоматически
     zone = mapped_column(Geography("MULTIPOLYGON", srid=4326, spatial_index=False))
+    # [D] В-7: с неактивным подрядчиком договор расторгнут, ему ничего не назначается
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=true())
