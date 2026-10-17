@@ -16,6 +16,9 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
+# Миграции нужны в образе: деплой запускает alembic upgrade head в контейнере backend
+COPY alembic.ini ./
+COPY migrations ./migrations
 
 USER app
 EXPOSE 8000
