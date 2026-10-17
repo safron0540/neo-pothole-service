@@ -22,6 +22,17 @@ curl http://localhost:8000/api/v1/health   # Windows PowerShell: curl.exe
 
 Swagger: http://localhost:8000/api/docs. Остановить: `docker compose down` (данные базы сохраняются в томе `pgdata`; удалить их: `docker compose down -v`).
 
+### База и демо-данные
+
+```bash
+docker compose exec backend alembic upgrade head                # таблицы и группы улиц А–Е
+docker compose exec backend python -m scripts.load_streets      # улицы из OSM (Overpass)
+docker compose exec backend python -m scripts.load_buildings    # дома с номерами вдоль улиц
+docker compose exec backend python -m scripts.seed_demo         # 3 подрядчика, диспетчер, подрядчик, гражданин
+```
+
+Улицы, их группы и районы задаёт `backend/scripts/street_groups.csv` (пока черновик, проверяет команда). Скрипты можно запускать повторно: строки обновляются по номеру OSM, дублей нет. Публичный Overpass бывает перегружен, скрипты повторяют запрос сами; ответ можно сохранить (`--save файл.json`) и загрузить без сети (`--file файл.json`). `seed_demo` печатает пароли новых пользователей один раз; задать свой: переменная `SEED_PASSWORD`.
+
 ## Запуск backend локально
 
 Нужен Python 3.12.
