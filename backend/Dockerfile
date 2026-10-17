@@ -19,6 +19,8 @@ COPY app ./app
 # Миграции нужны в образе: деплой запускает alembic upgrade head в контейнере backend
 COPY alembic.ini ./
 COPY migrations ./migrations
+# Загрузка данных: docker compose exec backend python -m scripts.load_streets
+COPY scripts ./scripts
 
 USER app
 EXPOSE 8000
