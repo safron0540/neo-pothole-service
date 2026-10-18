@@ -57,9 +57,7 @@
 ## Структура проекта
 
 <details>
-<summary><b>Развернуть структуру исходного кода</b></summary>
 
-```text
 frontend/
 ├── public/                     # Статические файлы
 ├── src/
@@ -90,4 +88,17 @@ frontend/
 ├── tailwind.config.js
 ├── tsconfig.json
 └── vite.config.ts
+## Установка и запуск
 
+### Требования
+* Node.js >= 20.19.0
+* npm >= 9.x
+
+Установка зависимостей:
+code
+Bash
+npm install
+Запуск сервера разработки:
+code
+Bash
+npm run dev
