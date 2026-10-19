@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
-import { User, HardHat } from "lucide-react";
+import { User, HardHat, Loader2 } from "lucide-react";
 import logoImg from "../../assets/logo.svg";
+import { api } from "../../api";
 
 interface LoginPageProps {
   onLogin: (role: 'dispatcher' | 'contractor') => void;
@@ -13,21 +14,30 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setErrorMessage(null);
 
     if (!login.trim() || !password.trim()) {
-      setErrorMessage("Неверный логин или пароль");
+      setErrorMessage("Введите логин и пароль");
       return;
     }
 
-    // Разделение ролей по Q-03
-    if (login.toLowerCase().includes("contractor") || login.toLowerCase().includes("voronov")) {
-      onLogin('contractor');
-    } else {
-      onLogin('dispatcher');
+    setIsLoading(true);
+    try {
+      const response = await api.staffLogin(login, password);
+      onLogin(response.role);
+    } catch {
+      // Резервный демо-вход при выключенном мок-сервере
+      if (login.toLowerCase().includes("contractor") || login.toLowerCase().includes("voronov")) {
+        onLogin('contractor');
+      } else {
+        onLogin('dispatcher');
+      }
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -35,15 +45,11 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     <main className="flex min-h-screen w-full items-center justify-center bg-neutral-200 px-4 py-8">
       <div className="w-full max-w-md rounded-3xl bg-neutral-50 px-6 py-10 sm:px-12 shadow-sm border border-neutral-200">
         <div className="flex flex-col items-center gap-6">
-          
           <div className="flex items-center justify-center gap-3">
             <img 
               src={logoImg} 
               alt="Логотип NEO-СЕРВИС" 
               className="h-14 w-auto object-contain shrink-0" 
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
             />
             <span className="text-xl font-bold leading-tight text-neutral-900 tracking-wide text-left">
               NEO-СЕРВИС:<br />ЯМОЧНЫЙ РЕМОНТ
@@ -56,7 +62,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 <span className="text-xs font-medium text-neutral-700">Логин</span>
                 <input
                   type="text"
-                  placeholder="Введите логин"
+                  placeholder="ivanova@service.ru"
                   value={login}
                   onChange={(e) => setLogin(e.target.value)}
                   className={fieldClass}
@@ -76,20 +82,18 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             </div>
 
             {errorMessage && (
-              <p className="text-xs font-medium text-red-600">
-                {errorMessage}
-              </p>
+              <p className="text-xs font-medium text-red-600">{errorMessage}</p>
             )}
 
             <button
               type="submit"
-              className="mt-2 flex h-11 w-44 items-center justify-center rounded-xl bg-red-700 text-sm font-medium text-white shadow-md transition-colors hover:bg-red-800 active:bg-red-900 cursor-pointer"
+              disabled={isLoading}
+              className="mt-2 flex h-11 w-44 items-center justify-center rounded-xl bg-red-700 text-sm font-medium text-white shadow-md transition-colors hover:bg-red-800 disabled:opacity-50 cursor-pointer"
             >
-              Войти
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Войти"}
             </button>
           </form>
 
-          {/* Быстрый демо-вход для проверки ролей */}
           <div className="w-full pt-4 border-t border-neutral-200 text-center">
             <div className="text-[11px] text-neutral-400 font-medium mb-2">
               Быстрый вход для проверки ролей (Демо):
@@ -113,7 +117,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </button>
             </div>
           </div>
-
         </div>
       </div>
     </main>

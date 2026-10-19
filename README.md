@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
@@ -30,3 +31,15 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+=======
+# Информационная система «Сервис подачи заявок. Ямочный ремонт»
+
+## Структура репозитория
+
+backend/ — серверная часть и REST API
+frontend/ — веб-приложение для диспетчера и подрядчика
+mobile/ — клиентское мобильное приложение для Android
+ml_service/ — сервис классификации дефектов дорожного покрытия
+infra/ — конфигурация Nginx и базы данных PostgreSQL
+tests/ — тестовый контур (smoke-тесты, коллекции Apache JMeter)
+>>>>>>> origin/main

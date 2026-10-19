@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "mock": "npx @stoplight/prism-cli mock openapi.yaml -p 4010"
   },
   "dependencies": {
     "@types/leaflet": "^1.9.22",

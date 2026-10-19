@@ -1,0 +1,408 @@
+openapi: 3.0.3
+info:
+  title: "Ямочный ремонт: API бэкенда"
+  description: "Контракт API по ЧТЗ 0.2 и ТУТ 0.4 для Definition of Done"
+  version: "1.0.0"
+
+servers:
+  - url: "http://127.0.0.1:4010/api/v1"
+    description: "Локальный Mock-сервер (Prism)"
+
+paths:
+  # Q-03: Вход диспетчера и подрядчика
+  /auth/staff/login:
+    post:
+      summary: "Q-03: Вход диспетчера и подрядчика"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login, password]
+              properties:
+                login:
+                  type: string
+                  example: "ivanova@service.ru"
+                password:
+                  type: string
+                  example: "Abcdefg1"
+      responses:
+        '200':
+          description: "Успешный вход"
+          content:
+            application/json:
+              example:
+                access: "sample_access_token_jwt"
+                refresh: "sample_refresh_token_jwt"
+                role: "dispatcher"
+        '401':
+          description: "Неверный логин или пароль"
+          content:
+            application/json:
+              example:
+                code: "AUTH_FAILED"
+                message: "Неверный логин или пароль"
+                details: {}
+
+  # Q-04: Обновление токена
+  /auth/refresh:
+    post:
+      summary: "Q-04: Обновление токена с ротацией"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh]
+              properties:
+                refresh:
+                  type: string
+                  example: "sample_refresh_token_jwt"
+      responses:
+        '200':
+          content:
+            application/json:
+              example:
+                access: "new_sample_access_token_jwt"
+                refresh: "new_sample_refresh_token_jwt"
+
+  # Q-09: Панель «Требует решения» и список заявок
+  /requests:
+    get:
+      summary: "Q-09: Список заявок с фильтрацией и сортировкой"
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+          example: "На проверке"
+        - name: sort
+          in: query
+          schema:
+            type: string
+          example: "priority"
+        - name: district
+          in: query
+          schema:
+            type: string
+          example: "Кировский"
+      responses:
+        '200':
+          content:
+            application/json:
+              example:
+                total: 4
+                items:
+                  - id: 20092026
+                    version: 1
+                    address: "ул. Ленина, 15"
+                    full_address: "г. Томск, ул. Ленина, 15"
+                    defect_class: "big"
+                    status: "На проверке"
+                    street_group: "А"
+                    contractor_id: 1
+                    contractor_name: "ООО «ДорСтрой-Лидер»"
+                    planned_due: "2026-10-20T14:00:00Z"
+                    hours_left: 24
+                    created_at: "2026-10-19T14:32:00Z"
+                    applicant_phone: "+79131234567"
+                    applicant_name: "Иванов А. А."
+                    lat: 56.467
+                    lon: 84.952
+                    recommended_status: "Принято"
+                  - id: 200292027
+                    version: 1
+                    address: "ул. Смольная, 19"
+                    full_address: "г. Томск, ул. Смольная, 19"
+                    defect_class: "big"
+                    status: "На проверке"
+                    street_group: "Б"
+                    contractor_id: 2
+                    contractor_name: "МУП «Автодор-Север»"
+                    planned_due: "2026-10-22T12:00:00Z"
+                    hours_left: 72
+                    created_at: "2026-10-19T12:10:00Z"
+                    applicant_phone: "+79991234567"
+                    applicant_name: "Петров В. В."
+                    lat: 56.495
+                    lon: 84.975
+                    recommended_status: "Принято"
+
+  # Q-10: Карточка заявки
+  /requests/{id}:
+    get:
+      summary: "Q-10: Карточка заявки"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 20092026
+      responses:
+        '200':
+          content:
+            application/json:
+              example:
+                id: 20092026
+                version: 1
+                address: "ул. Ленина, 15"
+                full_address: "г. Томск, ул. Ленина, 15"
+                defect_class: "big"
+                status: "На проверке"
+                street_group: "А"
+                contractor_id: 1
+                contractor_name: "ООО «ДорСтрой-Лидер»"
+                planned_due: "2026-10-20T14:00:00Z"
+                created_at: "2026-10-19T14:32:00Z"
+                applicant_phone: "+79131234567"
+                applicant_name: "Иванов А. А."
+                photo_url: "http://127.0.0.1:4010/photos/sample.jpg"
+                history:
+                  - time: "2026-10-19T14:30:00Z"
+                    status_from: null
+                    status_to: "На проверке"
+                    user: "Иванов А. А."
+
+  # Q-11: Принять, отклонить, запросить уточнение
+  /requests/{id}/status:
+    patch:
+      summary: "Q-11: Смена статуса заявки"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 20092026
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, version]
+              properties:
+                to:
+                  type: string
+                  enum: ["Принято", "Отклонено", "Требует уточнения"]
+                  example: "Принято"
+                comment:
+                  type: string
+                  example: "Заявка проверена диспетчером"
+                version:
+                  type: integer
+                  example: 1
+      responses:
+        '200':
+          content:
+            application/json:
+              example:
+                id: 20092026
+                status: "Принято"
+                version: 2
+        '409':
+          description: "Конфликт версий или недопустимый переход"
+          content:
+            application/json:
+              example:
+                code: "VERSION_CONFLICT"
+                message: "Заявка была изменена другим пользователем"
+                details: {}
+
+  # Q-14: Назначение подрядчика
+  /requests/{id}/contractor:
+    put:
+      summary: "Q-14: Ручное назначение подрядчика"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 20092026
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contractor_id]
+              properties:
+                contractor_id:
+                  type: integer
+                  example: 1
+      responses:
+        '200':
+          content:
+            application/json:
+              example:
+                id: 20092026
+                contractor_id: 1
+                status: "В работе"
+
+  # Q-17: Внутренняя заметка диспетчера
+  /requests/{id}/notes:
+    post:
+      summary: "Q-17: Внутренняя заметка диспетчера"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  example: "Служебный комментарий"
+      responses:
+        '201':
+          content:
+            application/json:
+              example:
+                success: true
+
+  # Q-18: Список подрядчика с просрочкой
+  /contractor/requests:
+    get:
+      summary: "Q-18: Список нарядов подрядчика"
+      responses:
+        '200':
+          content:
+            application/json:
+              example:
+                total: 2
+                items:
+                  - id: 20092026
+                    address: "ул. Ленина, 15"
+                    defect_class: "big"
+                    status: "В работе"
+                    planned_due: "2026-10-20T14:00:00Z"
+                    is_overdue: false
+                    hours_left: 24
+                    lat: 56.467
+                    lon: 84.952
+                  - id: 20090899
+                    address: "ул. Вершинина, 24"
+                    defect_class: "big"
+                    status: "В работе"
+                    planned_due: "2026-10-18T12:00:00Z"
+                    is_overdue: true
+                    hours_left: -26
+                    lat: 56.4632
+                    lon: 84.9541
+
+  # Q-19: Завершение с фото «после»
+  /contractor/requests/{id}/complete:
+    post:
+      summary: "Q-19: Завершение наряда с фото «после»"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 20092026
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          content:
+            application/json:
+              example:
+                id: 20092026
+                status: "Выполнено"
+                completed_at: "2026-10-19T15:00:00Z"
+
+  # Q-20: Маркеры карты
+  /map/points:
+    get:
+      summary: "Q-20: Маркеры карты с фильтрами и bbox"
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: bbox
+          in: query
+          schema:
+            type: string
+          example: "56.45,84.94,56.50,85.00"
+      responses:
+        '200':
+          content:
+            application/json:
+              example:
+                - id: 20092026
+                  lat: 56.467
+                  lon: 84.952
+                  status: "На проверке"
+                  defect_class: "big"
+                - id: 200292027
+                  lat: 56.495
+                  lon: 84.975
+                  status: "В работе"
+                  defect_class: "big"
+
+  # Q-22: Настройка сроков групп
+  /street-groups/{code}:
+    put:
+      summary: "Q-22: Изменение срока и порога группы"
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "Б"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deadline_hours, max_pits]
+              properties:
+                deadline_hours:
+                  type: integer
+                  example: 36
+                max_pits:
+                  type: integer
+                  example: 2
+      responses:
+        '200':
+          content:
+            application/json:
+              example:
+                code: "Б"
+                deadline_hours: 36
+                max_pits: 2
+
+  # Q-25: Health check
+  /health:
+    get:
+      summary: "Q-25: Проверка состояния сервиса"
+      responses:
+        '200':
+          content:
+            application/json:
+              example:
+                status: "ok"
