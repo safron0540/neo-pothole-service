@@ -1,45 +1,130 @@
-<<<<<<< HEAD
-# React + TypeScript + Vite
+<div align="center">
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+# NEO-СЕРВИС: Ямочный ремонт. Frontend часть.
 
-Currently, two official plugins are available:
+**Клиентская веб-платформа мониторинга, диспетчеризации и контроля устранения дефектов дорожного покрытия**
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+[![React](https://img.shields.io/badge/React-19.2-20232A?style=flat-square&logo=react&logoColor=61DAFB)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900?style=flat-square&logo=leaflet&logoColor=white)](https://leafletjs.com/)
 
-## React Compiler
+</div>
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the Oxlint configuration
+> [!NOTE]
+> Логика обработки заявок, категоризация дорог и контрольные сроки устранения дефектов реализованы.
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+---
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## Архитектура функциональных модулей
+
+| Модуль | Описание функционала | Реализация |
+| :--- | :--- | :--- |
+| **Диспетчеризация** | Прием первичных заявок, валидация фото, классификация дефектов («Большая» / «Маленькая»), назначение подрядчиков и смена статусов. | `DispatcherPage.tsx` |
+| **Геоаналитика (ГИС)** | Интерактивная карта на базе OpenStreetMap, тепловая карта плотности дефектов, полигональные зоны подрядчиков, фильтрация по районам. | `MapPage.tsx`, `leaflet.heat` |
+| **Плановый ремонт** | Автоматическое выявление участков дорог с превышением порога ям на 100 м, отрисовка отрезков полилиниями, выбор типа ремонта. | `PlannedRepairPage.tsx` |
+| **Кабинет подрядчика** | Реестр выданных нарядов с сортировкой по дедлайну, геопривязка, фотофиксация результата и подтверждение закрытия заявки. | `ContractorPage.tsx` |
+| **Аналитика и отчеты** | Сводные ведомости по округам, расчет SLA (процент в срок, среднее время устранения), клиентский экспорт в `.xlsx`. | `ReportsPage.tsx`, `SheetJS` |
+| **Администрирование** | Справочник лимитов времени по ГОСТ, классификатор улиц и районов, управление учетными записями и правами доступа. | `AdminPage.tsx`, `UsersPage.tsx` |
+
+---
+
+## Ролевая модель доступа
+
+| Роль | Доступный функционал |
+| :--- | :--- |
+| **Диспетчер** | Полный доступ: очередь заявок, ГИС-карта, планирование сплошного ремонта, отчеты, управление справочниками и пользователями. |
+| **Подрядчик** | Ограниченный доступ: просмотр назначенных нарядов, фиксация выполнения, загрузка подтверждающих фотоматериалов. |
+
+---
+
+## Стек технологий
+
+| Категория | Технологии |
+| :--- | :--- |
+| **Базовый стек** | React 19, TypeScript, Vite 8 |
+| **Стилизация** | Tailwind CSS 3, PostCSS, Autoprefixer |
+| **Картография** | Leaflet 1.9, React-Leaflet 5, Leaflet.heat |
+| **Экспорт данных** | SheetJS (xlsx) |
+| **Иконки** | Lucide React |
+
+---
+
+## Структура проекта
+
+<details>
+<summary><b>Развернуть структуру файлов</b></summary>
+
+```text
+frontend/
+├── public/                     # Статические файлы
+├── src/
+│   ├── assets/                 # Векторные ассеты и логотипы
+│   ├── components/             # Переиспользуемые UI-компоненты
+│   │   ├── Header.tsx          # Верхняя панель (поиск, статусное время)
+│   │   ├── Pagination.tsx      # Постраничная навигация
+│   │   └── Sidebar.tsx         # Навигационное меню диспетчера
+│   ├── pages/
+│   │   ├── admin/              # Администрирование, подрядчики, пользователи
+│   │   │   ├── AdminPage.tsx
+│   │   │   ├── App.tsx         # Корневой переключатель модулей и ролей
+│   │   │   ├── ContractorsPage.tsx
+│   │   │   └── UsersPage.tsx
+│   │   ├── contractor/         # Модуль подрядной организации
+│   │   │   └── ContractorPage.tsx
+│   │   ├── dispatcher/         # Диспетчерский центр
+│   │   │   ├── DispatcherPage.tsx
+│   │   │   ├── MapPage.tsx
+│   │   │   └── PlannedRepairPage.tsx
+│   │   ├── login/              # Страница авторизации
+│   │   │   └── LoginPage.tsx
+│   │   └── reports/            # Аналитика и генерация XLSX
+│   │       └── ReportsPage.tsx
+│   ├── index.css               # Стили, токены палитры и переопределения Leaflet
+│   └── main.tsx                # Инициализация приложения
+├── package.json
+├── tailwind.config.js
+├── tsconfig.json
+└── vite.config.ts
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
-=======
-# Информационная система «Сервис подачи заявок. Ямочный ремонт»
+</details>
 
-## Структура репозитория
+---
 
-backend/ — серверная часть и REST API
-frontend/ — веб-приложение для диспетчера и подрядчика
-mobile/ — клиентское мобильное приложение для Android
-ml_service/ — сервис классификации дефектов дорожного покрытия
-infra/ — конфигурация Nginx и базы данных PostgreSQL
-tests/ — тестовый контур (smoke-тесты, коллекции Apache JMeter)
->>>>>>> origin/main
+## Установка и запуск
+
+### Требования
+* Node.js >= 20.19.0
+* npm >= 9.x
+
+### Команды развертывания
+
+1. Клонирование репозитория и переход в папку проекта:
+```bash
+git clone <URL_РЕПОЗИТОРИЯ>
+cd frontend
+```
+
+2. Установка зависимостей:
+```bash
+npm install
+```
+
+3. Запуск сервера разработки:
+```bash
+npm run dev
+```
+
+
+
+## Тестовый вход в систему
+
+На странице авторизации предусмотрены кнопки быстрого входа:
+* **Диспетчер:** кнопка «Диспетчер (Иванова)» или ввод любого логина.
+* **Подрядчик:** кнопка «Подрядчик (Воронов)» или логин, содержащий слово `contractor`.
+
+Для тестирования интерфейсов в правом нижнем углу экрана закреплена кнопка переключения текущей роли без повторного входа.
