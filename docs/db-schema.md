@@ -157,7 +157,7 @@
 | Телефон              | phone    | varchar(16)                   |                 | Вводит диспетчер, хранится в формате E.164 (+79131234567)                                                                                                                                    |
 | Электронная почта    | email    | varchar(254)                  |                 | Вводит диспетчер                                                                                                                                                                             |
 | Зона обслуживания    | zone     | geography(MultiPolygon, 4326) | NULL, GiST      | GeoJSON от диспетчера; API проверяет корректность и что зона не пересекается с чужими **\[D\]**. Пусто: подрядчик не назначается автоматически. Новая зона действует только для новых заявок |
-| Активен              | is_active | boolean                      | DEF true        | Диспетчер снимает признак, когда договор расторгнут: подрядчик не участвует в автоназначении и не выбирается вручную, история заявок остаётся **\[D\]** (В-7) |
+| Активен              | is_active | boolean                      | DEF true        | Диспетчер снимает признак, когда договор расторгнут: подрядчик не участвует в автоназначении и не выбирается вручную, история заявок остаётся (В-7) |
 
 ### 4.2 Пользователи и доступ
 
@@ -255,8 +255,8 @@ FCM-токены телефонов для push-уведомлений, этап
 | Класс от модели             | model_class       | varchar(5)             | NULL, CHECK              | Ответ модели; пусто, если модель не ответила. Не меняется                                                 |
 | Источник класса             | class_source      | varchar(10)            | CHECK                    | model, citizen или dispatcher; меняется вместе с классом                                                  |
 | Количество ям               | pits_count        | int                    | DEF 1, CHECK ≥ 1         | От модели; 1, если класс выбран вручную                                                                   |
-| Статус                      | status            | varchar(20)            | DEF «На проверке», CHECK | Меняет только функция change_status() (раздел 11)                                                         |
-| Причина отклонения          | reject_reason     | varchar(10)            | NULL, CHECK              | small_pit, not_a_pit, duplicate или other; выбирает диспетчер при «Отклонено». В плановый ремонт идут только small_pit **\[D\]** (В-2) |
+| Статус                      | status            | varchar(20)            | DEF on_review, CHECK     | Меняет только функция change_status() (раздел 11)                                                         |
+| Причина отклонения          | reject_reason     | varchar(10)            | NULL, CHECK              | small_pit, not_a_pit, duplicate или other; выбирает диспетчер при «Отклонено». В плановый ремонт идут только small_pit (В-2) |
 | Комментарий к решению       | decision_comment  | text                   | NULL                     | Пишет диспетчер: причина отклонения (обязательна) или что уточняется                                      |
 | Комментарий гражданина      | citizen_comment   | text                   | NULL                     | Из формы подачи (REQ-023). Не меняется                                                                    |
 | Момент обнаружения          | detected_at       | timestamptz            | DEF now()                | Время регистрации заявки; по ГОСТ от него считается срок. Не меняется                                     |
@@ -269,7 +269,7 @@ FCM-токены телефонов для push-уведомлений, этап
 | Версия                      | version           | int                    | DEF 1                    | +1 при каждом изменении; клиент присылает её в действиях диспетчера (защита от одновременной правки)      |
 | Дата изменения              | updated_at        | timestamptz            | DEF now()                | Ставит триггер set_updated_at                                                                             |
 
-**CHECK:** заявка не ссылается сама на себя (duplicate_of_id \<\> id, merged_into_id \<\> id); в статусе «В работе» заполнен contractor_id; в статусе «Выполнено» заполнены after_photo_id и completed_at; в статусах «Принято», «В работе», «Выполнено» заполнен planned_due_at, то есть без группы улицы заявку не принять **\[D\]** (В-3). Три последних правила не действуют для слитых заявок: их статус повторяет основную, а фото «после» берётся у неё.
+**CHECK:** заявка не ссылается сама на себя (duplicate_of_id \<\> id, merged_into_id \<\> id); в статусе «В работе» заполнен contractor_id; в статусе «Выполнено» заполнены after_photo_id и completed_at; в статусах «Принято», «В работе», «Выполнено» заполнен planned_due_at, то есть без группы улицы заявку не принять (В-3). Три последних правила не действуют для слитых заявок: их статус повторяет основную, а фото «после» берётся у неё.
 
 **Не меняются после создания** (триггер forbid_requests_immutable): author_id, client_request_id, detected_at, before_photo_id.
 
@@ -389,7 +389,7 @@ FCM-токены телефонов для push-уведомлений, этап
 | **Поле**                               | **Значения**                                                                                                                     |
 |----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
 | **users.role**                         | citizen (гражданин), dispatcher (диспетчер), contractor (подрядчик)                                                              |
-| **requests.status**                    | На проверке, Принято, Отклонено, Требует уточнения, В работе, Выполнено                                                          |
+| **requests.status**                    | on_review (На проверке), accepted (Принято), rejected (Отклонено), needs_clarification (Требует уточнения), in_progress (В работе), done (Выполнено). Подписи — app/core/statuses.py (В-37) |
 | **requests.defect_class, model_class** | big (большая яма), small (маленькая яма)                                                                                         |
 | **requests.class_source**              | model (модель), citizen (гражданин), dispatcher (диспетчер)                                                                      |
 | **request_events.type**                | created, processed, status_changed, class_changed, group_changed, contractor_changed, merged, duplicate_flag_removed, note_added |
@@ -408,10 +408,10 @@ FCM-токены телефонов для push-уведомлений, этап
 | Просрочка                  | planned_due_at \< now() и статус «Принято» или «В работе»                                       | planned_due_at, status                                                    | Зависит от текущего времени: флаг пришлось бы обновлять по расписанию                                    |
 | Подлежит устранению        | defect_class = big                                                                              | defect_class                                                              | Полностью определяется классом, отдельное поле могло бы с ним разойтись                                  |
 | Рекомендация диспетчеру    | big → «Принято»; small → «Отклонено» с текстом про плановый ремонт                              | defect_class                                                              | То же; при смене класса рекомендация меняется сама                                                       |
-| Приоритет в панели         | Сортировка: big выше → duplicates_count по убыванию → группа А→Е → planned_due_at → detected_at | defect_class, duplicates_count, street_group, planned_due_at, detected_at | Это порядок заявок относительно друг друга, а не свойство одной заявки                                   |
+| Приоритет в панели         | Сортировка: big выше → duplicates_count по убыванию → группа А→Е → detected_at → planned_due_at (В-11) | defect_class, duplicates_count, street_group, planned_due_at, detected_at | Это порядок заявок относительно друг друга, а не свойство одной заявки                                   |
 | Нужна группа               | street_group IS NULL                                                                            | street_group                                                              | Простая проверка пустого поля                                                                            |
 | Нужен подрядчик            | contractor_id IS NULL                                                                           | contractor_id                                                             | То же                                                                                                    |
-| Сумма ям участка           | Сумма pits_count заявок участка со статусом «Отклонено», классом small, без merged_into_id      | street_id, segment_idx, status, defect_class, pits_count, merged_into_id  | Меняется при любом решении по заявкам участка. В предложении хранится только снимок последнего пересчёта |
+| Сумма ям участка           | Число заявок участка со статусом «Отклонено», reject_reason = small_pit, классом small, без merged_into_id (В-2, В-15) | street_id, segment_idx, status, defect_class, pits_count, merged_into_id  | Меняется при любом решении по заявкам участка. В предложении хранится только снимок последнего пересчёта |
 | Состав предложения         | Тот же запрос, что и для суммы                                                                  | те же                                                                     | Всегда совпадает с текущими заявками                                                                     |
 | Фото «после» слитой заявки | Фото основной заявки через merged_into_id                                                       | merged_into_id, after_photo_id                                            | Не дублировать одно фото в нескольких заявках                                                            |
 | Выполнено в срок           | completed_at ≤ planned_due_at                                                                   | completed_at, planned_due_at                                              | Нужно только в отчётах                                                                                   |
@@ -425,10 +425,10 @@ FCM-токены телефонов для push-уведомлений, этап
 |--------------------------|------------------------------------------------------------------------------------------|--------------------|--------------------------------------------------------|
 | requests                 | location                                                                                 | GiST               | Дубликаты в радиусе 15 м, карта по видимой области     |
 | requests                 | (status, detected_at)                                                                    | B-tree             | Списки по статусу и дате                               |
-| requests                 | (detected_at) WHERE status = 'На проверке'                                               | частичный          | Панель «Требует решения»                               |
+| requests                 | (detected_at) WHERE status = 'on_review'                                               | частичный          | Панель «Требует решения»                               |
 | requests                 | (contractor_id, status)                                                                  | B-tree             | Заявки подрядчика                                      |
 | requests                 | (author_id, detected_at DESC)                                                            | B-tree             | «Мои заявки» гражданина                                |
-| requests                 | (planned_due_at) WHERE status IN ('Принято', 'В работе')                                 | частичный          | Просроченные заявки                                    |
+| requests                 | (planned_due_at) WHERE status IN ('accepted', 'in_progress')                                 | частичный          | Просроченные заявки                                    |
 | requests                 | (merged_into_id)                                                                         | B-tree             | Слитые заявки основной, синхронизация статуса          |
 | requests                 | (street_id, segment_idx)                                                                 | B-tree             | Пересчёт участка и состав предложения                  |
 | requests                 | UNIQUE (author_id, client_request_id), UNIQUE (before_photo_id), UNIQUE (after_photo_id) | уникальные         | Защита от повторной отправки; одно фото на одну заявку |
@@ -557,7 +557,7 @@ context.configure(
 | 0001_postgis            | CREATE EXTENSION IF NOT EXISTS postgis. Откат расширение не удаляет: в образе postgis/postgis от него зависят postgis_topology и postgis_tiger_geocoder        |
 | 0002_reference          | districts, street_groups, streets, buildings, contractors и их индексы                                                                                         |
 | 0003_users              | users, citizens, contractor_users, user_consents, refresh_tokens, device_tokens; триггер check_user_role                                                       |
-| 0004_requests           | photos, requests, request_events, internal_notes, notifications, planned_repair_proposals; CHECK, индексы, триггеры set_updated_at и forbid_requests_immutable; contractors.is_active и requests.reject_reason **\[D\]** |
+| 0004_requests           | photos, requests, request_events, internal_notes, notifications, planned_repair_proposals; CHECK, индексы, триггеры set_updated_at и forbid_requests_immutable; contractors.is_active и requests.reject_reason; статус — код (В-37) |
 | 0005_seed_street_groups | Данные групп А–Е                                                                                                                                               |
 
 ### Правила
