@@ -33,6 +33,10 @@ docker compose exec backend python -m scripts.seed_demo         # 3 подряд
 
 Улицы, их группы и районы задаёт `backend/scripts/street_groups.csv` (пока черновик, проверяет команда). Скрипты можно запускать повторно: строки обновляются по номеру OSM, дублей нет. Публичный Overpass бывает перегружен, скрипты повторяют запрос сами; ответ можно сохранить (`--save файл.json`) и загрузить без сети (`--file файл.json`). `seed_demo` печатает пароли новых пользователей один раз; задать свой: переменная `SEED_PASSWORD`.
 
+### ML-сервис (заглушка)
+
+`ml_service` в compose пока заглушка: `POST /predict` (поле `image`) отвечает `{has_pit, class, pits_count, confidence, model_version}` — предложение формата для модели (В-34). Режим задаёт `ML_STUB_MODE` в `.env`: `random` (по умолчанию, ответ зависит от фото), `big`, `small`, `no_pit`, `unavailable` (503), `slow` (ждёт дольше таймаута 8 с).
+
 ## Запуск backend локально
 
 Нужен Python 3.12.

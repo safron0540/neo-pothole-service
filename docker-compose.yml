@@ -30,11 +30,21 @@ services:
     environment:
       # Внутри сети compose база доступна по имени сервиса db
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-potholes}
+      ML_URL: http://ml_service:8001
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+
+  # Пока заглушка (ML_STUB_MODE в .env); настоящую модель ведёт ML-разработчик
+  ml_service:
+    build: ./ml_service
+    restart: unless-stopped
+    environment:
+      ML_STUB_MODE: ${ML_STUB_MODE:-random}
+    ports:
+      - "127.0.0.1:${ML_PORT:-8001}:8001"
 
 volumes:
   pgdata:
