@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     app_name: str = "Pothole Service API"
     environment: str = "dev"  # dev | test | prod
 
-    database_url: str = "postgresql+psycopg://app:app@localhost:5432/potholes"
+    database_url: str = "postgresql+psycopg://app:app@127.0.0.1:5432/potholes"
 
     jwt_secret: str = DEV_JWT_SECRET
     jwt_access_minutes: int = 30
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     photos_dir: str = "/data/photos"
 
-    ml_url: str = "http://localhost:8001"
+    ml_url: str = "http://127.0.0.1:8001"
     ml_timeout_seconds: float = 8.0
 
     @model_validator(mode="after")
