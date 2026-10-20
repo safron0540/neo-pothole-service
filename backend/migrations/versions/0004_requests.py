@@ -5,6 +5,7 @@ planned_repair_proposals.
 
 Плюс contractors.is_active (В-7), requests.reject_reason (В-2), CHECK срока у принятой
 заявки (В-3) — решения [D] по рекомендации, ждут подтверждения команды.
+Статус хранится кодом (on_review, accepted, …), русские подписи — app/core/statuses.py (В-37).
 Триггеры: set_updated_at и forbid_requests_immutable (docs/db-schema.md, раздел 9).
 
 Revision ID: 0004
@@ -160,7 +161,7 @@ def upgrade() -> None:
         sa.Column("model_class", sa.String(length=5), nullable=True),
         sa.Column("class_source", sa.String(length=10), nullable=False),
         sa.Column("pits_count", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("status", sa.String(length=20), server_default="На проверке", nullable=False),
+        sa.Column("status", sa.String(length=20), server_default="on_review", nullable=False),
         sa.Column("reject_reason", sa.String(length=10), nullable=True),
         sa.Column("decision_comment", sa.Text(), nullable=True),
         sa.Column("citizen_comment", sa.Text(), nullable=True),
@@ -196,21 +197,21 @@ def upgrade() -> None:
             name=op.f("ck_requests_reject_reason"),
         ),
         sa.CheckConstraint(
-            "status <> 'В работе' OR contractor_id IS NOT NULL OR merged_into_id IS NOT NULL",
+            "status <> 'in_progress' OR contractor_id IS NOT NULL OR merged_into_id IS NOT NULL",
             name=op.f("ck_requests_in_work_has_contractor"),
         ),
         sa.CheckConstraint(
-            "status <> 'Выполнено' OR merged_into_id IS NOT NULL"
+            "status <> 'done' OR merged_into_id IS NOT NULL"
             " OR (after_photo_id IS NOT NULL AND completed_at IS NOT NULL)",
             name=op.f("ck_requests_done_has_after_photo"),
         ),
         sa.CheckConstraint(
-            "status IN ('На проверке', 'Принято', 'Отклонено', 'Требует уточнения',"
-            " 'В работе', 'Выполнено')",
+            "status IN ('on_review', 'accepted', 'rejected', 'needs_clarification',"
+            " 'in_progress', 'done')",
             name=op.f("ck_requests_status"),
         ),
         sa.CheckConstraint(
-            "status NOT IN ('Принято', 'В работе', 'Выполнено')"
+            "status NOT IN ('accepted', 'in_progress', 'done')"
             " OR planned_due_at IS NOT NULL OR merged_into_id IS NOT NULL",
             name=op.f("ck_requests_accepted_has_due_date"),
         ),
@@ -306,14 +307,14 @@ def upgrade() -> None:
         "requests",
         ["detected_at"],
         unique=False,
-        postgresql_where=sa.text("status = 'На проверке'"),
+        postgresql_where=sa.text("status = 'on_review'"),
     )
     op.create_index(
         "ix_requests_overdue_planned_due_at",
         "requests",
         ["planned_due_at"],
         unique=False,
-        postgresql_where=sa.text("status IN ('Принято', 'В работе')"),
+        postgresql_where=sa.text("status IN ('accepted', 'in_progress')"),
     )
     op.create_index(
         "ix_requests_status_detected_at", "requests", ["status", "detected_at"], unique=False
@@ -468,12 +469,12 @@ def downgrade() -> None:
     op.drop_index(
         "ix_requests_overdue_planned_due_at",
         table_name="requests",
-        postgresql_where=sa.text("status IN ('Принято', 'В работе')"),
+        postgresql_where=sa.text("status IN ('accepted', 'in_progress')"),
     )
     op.drop_index(
         "ix_requests_on_review_detected_at",
         table_name="requests",
-        postgresql_where=sa.text("status = 'На проверке'"),
+        postgresql_where=sa.text("status = 'on_review'"),
     )
     op.drop_index("ix_requests_merged_into_id", table_name="requests")
     op.drop_geospatial_index(

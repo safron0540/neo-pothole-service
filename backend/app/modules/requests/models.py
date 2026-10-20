@@ -26,9 +26,9 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import CHAR, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.statuses import ON_REVIEW, STATUSES
 from app.db import Base
 
-STATUSES = ("На проверке", "Принято", "Отклонено", "Требует уточнения", "В работе", "Выполнено")
 EVENT_TYPES = (
     "created",
     "processed",
@@ -63,17 +63,17 @@ class Request(Base):
         CheckConstraint("merged_into_id <> id", name="not_merged_into_itself"),
         # Слитые заявки повторяют статус основной, поэтому правила ниже их не касаются
         CheckConstraint(
-            "status <> 'В работе' OR contractor_id IS NOT NULL OR merged_into_id IS NOT NULL",
+            "status <> 'in_progress' OR contractor_id IS NOT NULL OR merged_into_id IS NOT NULL",
             name="in_work_has_contractor",
         ),
         CheckConstraint(
-            "status <> 'Выполнено' OR merged_into_id IS NOT NULL"
+            "status <> 'done' OR merged_into_id IS NOT NULL"
             " OR (after_photo_id IS NOT NULL AND completed_at IS NOT NULL)",
             name="done_has_after_photo",
         ),
         # [D] В-3: без группы улицы (значит, без срока) заявку не принять
         CheckConstraint(
-            "status NOT IN ('Принято', 'В работе', 'Выполнено')"
+            "status NOT IN ('accepted', 'in_progress', 'done')"
             " OR planned_due_at IS NOT NULL OR merged_into_id IS NOT NULL",
             name="accepted_has_due_date",
         ),
@@ -82,14 +82,14 @@ class Request(Base):
         Index(
             "ix_requests_on_review_detected_at",
             "detected_at",
-            postgresql_where=text("status = 'На проверке'"),
+            postgresql_where=text("status = 'on_review'"),
         ),
         Index("ix_requests_contractor_id_status", "contractor_id", "status"),
         Index("ix_requests_author_id_detected_at", "author_id", text("detected_at DESC")),
         Index(
             "ix_requests_overdue_planned_due_at",
             "planned_due_at",
-            postgresql_where=text("status IN ('Принято', 'В работе')"),
+            postgresql_where=text("status IN ('accepted', 'in_progress')"),
         ),
         Index("ix_requests_merged_into_id", "merged_into_id"),
         Index("ix_requests_street_id_segment_idx", "street_id", "segment_idx"),
@@ -129,7 +129,7 @@ class Request(Base):
     class_source: Mapped[str] = mapped_column(String(10))
     pits_count: Mapped[int] = mapped_column(Integer, server_default="1")
 
-    status: Mapped[str] = mapped_column(String(20), server_default="На проверке")
+    status: Mapped[str] = mapped_column(String(20), server_default=ON_REVIEW)
     reject_reason: Mapped[str | None] = mapped_column(String(10))
     decision_comment: Mapped[str | None] = mapped_column(Text)
     citizen_comment: Mapped[str | None] = mapped_column(Text)
