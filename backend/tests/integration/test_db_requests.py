@@ -118,7 +118,7 @@ def test_req_002_request_defaults(conn):
         text("SELECT status, version, pits_count, duplicates_count FROM requests WHERE id = :id"),
         {"id": request_id},
     ).one()
-    assert (status, version, pits, duplicates) == ("На проверке", 1, 1, 0)
+    assert (status, version, pits, duplicates) == ("on_review", 1, 1, 0)
 
 
 def test_req_002_request_requires_before_photo(conn):
@@ -162,7 +162,9 @@ def test_req_003_status_only_six_values(conn):
 
 def test_req_043_in_work_requires_contractor(conn):
     with violates(conn, "ck_requests_in_work_has_contractor"):
-        add_request(conn, add_user(conn, "citizen"), status="В работе", planned_due_at="2026-10-20")
+        add_request(
+            conn, add_user(conn, "citizen"), status="in_progress", planned_due_at="2026-10-20"
+        )
 
 
 def test_req_063_done_requires_after_photo(conn):
@@ -170,7 +172,7 @@ def test_req_063_done_requires_after_photo(conn):
         add_request(
             conn,
             add_user(conn, "citizen"),
-            status="Выполнено",
+            status="done",
             planned_due_at="2026-10-20",
             completed_at="2026-10-19",
         )
@@ -179,14 +181,14 @@ def test_req_063_done_requires_after_photo(conn):
 def test_v3_accepted_requires_due_date(conn):
     # [D] В-3: без группы улицы срока нет, и принять заявку нельзя
     with violates(conn, "ck_requests_accepted_has_due_date"):
-        add_request(conn, add_user(conn, "citizen"), status="Принято")
+        add_request(conn, add_user(conn, "citizen"), status="accepted")
 
 
 def test_merged_request_follows_main_without_own_contractor(conn):
     citizen = add_user(conn, "citizen")
     main = add_request(conn, citizen)
     # Слитая заявка повторяет статус основной: своих подрядчика и срока у неё нет
-    add_request(conn, citizen, status="В работе", merged_into_id=main)
+    add_request(conn, citizen, status="in_progress", merged_into_id=main)
 
 
 def test_request_cannot_be_duplicate_of_itself(conn):
@@ -199,9 +201,9 @@ def test_request_cannot_be_duplicate_of_itself(conn):
 
 def test_v2_reject_reason_values(conn):
     citizen = add_user(conn, "citizen")
-    add_request(conn, citizen, status="Отклонено", reject_reason="not_a_pit")
+    add_request(conn, citizen, status="rejected", reject_reason="not_a_pit")
     with violates(conn, "ck_requests_reject_reason"):
-        add_request(conn, citizen, status="Отклонено", reject_reason="lazy")
+        add_request(conn, citizen, status="rejected", reject_reason="lazy")
 
 
 @pytest.mark.parametrize(
