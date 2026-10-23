@@ -1,0 +1,26 @@
+# Настройки инструментов backend. Зависимости лежат в requirements*.txt (по ним работает CI).
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/F — ошибки, I — порядок импортов, B — типичные баги, UP — современный синтаксис
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
+markers = [
+    "integration: тесты с PostGIS (идут в job backend-integration)",
+    "e2e: сквозные сценарии (идут в job backend-integration)",
+    "slow: медленные тесты, в быстрый CI не входят",
+]
+
+[tool.coverage.run]
+source = ["app"]
+
+[tool.coverage.report]
+# Порог 60 % (Definition of Done) считается только по правилам и сервисам
+include = ["app/core/*", "app/modules/*/service.py"]
