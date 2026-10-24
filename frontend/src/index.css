@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Подключение стилей карты Leaflet */
+@import "leaflet/dist/leaflet.css";
+
+/* Скрыть плашку копирайта Leaflet в углу */
+.leaflet-control-attribution {
+  display: none !important;
+}
+
+/* CSS-переменные по требованию УД-3 (палитра NST и статусы УД-2) */
+:root {
+  --color-primary: #C42915;
+  --color-primary-hover: #A82211;
+  --color-primary-active: #901C0D;
+  --color-bg-base: #EDEDED;
+  --color-bg-card: #F5F5F5;
+  --color-text-main: #212121;
+  --color-text-muted: #9E9E9E;
+
+  --status-review: #9E9E9E;
+  --status-accepted: #2563EB;
+  --status-in-work: #EAB308;
+  --status-done: #16A34A;
+  --status-clarify: #EA580C;
+  --status-rejected: #DC2626;
+}
+
+body {
+  margin: 0;
+  background-color: #EDEDED;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
