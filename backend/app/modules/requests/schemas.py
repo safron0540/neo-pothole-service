@@ -74,6 +74,7 @@ class DispatcherRequestSummary(RequestSummary):
     duplicate_of_id: int | None
     needs_group: bool
     needs_contractor: bool
+    version: int = Field(description="для действий диспетчера прямо из списка")
 
 
 class DispatcherRequestOut(DispatcherRequestSummary):
@@ -146,9 +147,17 @@ class NoteOut(BaseModel):
 
 
 class MapPoint(BaseModel):
+    """Маркер карты и поля для всплывающей подсказки; полная карточка — /requests/{id}."""
+
     id: int
     lat: float
     lon: float
     status: StatusCode
     defect_class: DefectClass
     is_overdue: bool
+    address: str | None
+    street_group: StreetGroup | None
+    district: Ref | None
+    contractor: Ref | None
+    detected_at: UtcDateTime
+    planned_due_at: UtcDateTime | None
