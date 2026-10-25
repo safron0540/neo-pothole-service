@@ -22,6 +22,9 @@ COPY migrations ./migrations
 # Загрузка данных: docker compose exec backend python -m scripts.load_streets
 COPY scripts ./scripts
 
+# Папка фото: в compose на неё смонтирован том photos, владелец — пользователь app
+RUN mkdir -p /data/photos && chown app:app /data/photos
+
 USER app
 EXPOSE 8000
 
