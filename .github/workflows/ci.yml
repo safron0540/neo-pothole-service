@@ -142,10 +142,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js 18
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
 
       - name: Run linting and build
         run: |
@@ -214,11 +214,34 @@ jobs:
             echo "gradlew not found in ./mobile. Skipping."
           fi
 
-  # 7. Единый итог: в защите ветки main достаточно требовать только эту проверку
+  # 7. Сквозные smoke-автотесты (синтаксис и сборка набора)
+  smoke-ci:
+    name: Smoke tests syntax check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify smoke tests collection
+        run: |
+          if [ -d tests/smoke ]; then
+            python -m pip install --upgrade pip
+            pip install -r tests/smoke/requirements.txt
+            pytest tests/smoke --collect-only
+          else
+            echo "tests/smoke not found. Skipping."
+          fi
+
+  # 8. Единый итог: в защите ветки main достаточно требовать только эту проверку
   ci-gate:
     name: CI gate
     runs-on: ubuntu-latest
-    needs: [backend-ci, backend-integration, docker-build, frontend-ci, ml-ci, mobile-ci]
+    needs: [backend-ci, backend-integration, docker-build, frontend-ci, ml-ci, mobile-ci, smoke-ci]
     if: always()
     steps:
       - name: Check results
@@ -229,7 +252,7 @@ jobs:
             exit 1
           fi
 
-  # 8. Деплой на сервер: только после слияния в main и зелёного ci-gate
+  # 9. Деплой на сервер: только после слияния в main и зелёного ci-gate
   deploy:
     name: Deploy to Server (CD)
     runs-on: ubuntu-latest
@@ -280,4 +303,12 @@ jobs:
               echo "Health check failed: $url"
               exit 1
             fi
+
+            # Пост-деплой smoke-проверка
+            if [ -d tests/smoke ] && [ -f tests/smoke/requirements.txt ]; then
+              echo "Запуск smoke-автотестов на стенде..."
+              python3 -m pip install -q -r tests/smoke/requirements.txt 2>/dev/null || true
+              BASE_URL="http://127.0.0.1:${port:-8000}" python3 -m pytest tests/smoke -v || true
+            fi
+
             docker image prune -f > /dev/null
