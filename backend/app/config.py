@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     ml_url: str = "http://127.0.0.1:8001"
     ml_timeout_seconds: float = 8.0
 
+    # Радиусы поиска при автообработке, метры (REQ-039, 044; В-13 [D])
+    street_match_radius_m: float = 30
+    building_match_radius_m: float = 30
+    duplicate_radius_m: float = 15
+
     @model_validator(mode="after")
     def _secret_is_set_in_prod(self) -> "Settings":
         # На сервере нельзя случайно запуститься с секретом из примера
