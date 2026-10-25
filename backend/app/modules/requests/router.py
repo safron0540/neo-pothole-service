@@ -1,12 +1,16 @@
-"""Заявки гражданина, диспетчера и подрядчика, карта. Реализация — PR 2-5…3-4."""
+"""Заявки гражданина, диспетчера и подрядчика, карта. Реализация — PR 2-5…3-4.
+
+Роутер проверяет роль и передаёт работу сервису: в БД он сам не ходит.
+"""
 
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, File, Query, UploadFile, status
+from fastapi import APIRouter, File, Query, Response, UploadFile, status
 
-from app.deps import Paging, Token
+from app.deps import CitizenUser, DbSession, Paging, Token
 from app.errors import ERROR_RESPONSES, not_implemented
+from app.modules.requests import service
 from app.modules.requests.schemas import (
     CitizenRequestOut,
     ClassChange,
@@ -39,17 +43,22 @@ router = APIRouter(responses=ERROR_RESPONSES)
     tags=["citizen"],
     summary="Подача заявки и автообработка",
 )
-def create_request(body: RequestCreate, token: Token) -> CitizenRequestOut:
+def create_request(
+    body: RequestCreate, user: CitizenUser, session: DbSession, response: Response
+) -> CitizenRequestOut:
     """Повтор с тем же client_request_id отвечает 200 той же заявкой.
     409 — фото уже использовано; 422 — чужое фото или нет manual_class."""
-    not_implemented()
+    request, created = service.create_request(session, user.id, body)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return request
 
 
 @router.get(
     "/me/requests", response_model=Page[RequestSummary], tags=["citizen"], summary="Мои заявки"
 )
-def my_requests(token: Token, paging: Paging) -> Page[RequestSummary]:
-    not_implemented()
+def my_requests(user: CitizenUser, paging: Paging, session: DbSession) -> Page[RequestSummary]:
+    return service.my_requests(session, user.id, paging)
 
 
 @router.get(
@@ -58,8 +67,8 @@ def my_requests(token: Token, paging: Paging) -> Page[RequestSummary]:
     tags=["citizen"],
     summary="Моя заявка: фото и история",
 )
-def my_request(request_id: int, token: Token) -> CitizenRequestOut:
-    not_implemented()
+def my_request(request_id: int, user: CitizenUser, session: DbSession) -> CitizenRequestOut:
+    return service.citizen_request(session, user.id, request_id)
 
 
 # --- Диспетчер -----------------------------------------------------------------------
