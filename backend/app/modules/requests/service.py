@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core import rules
 from app.core.statuses import (
     ACCEPTED,
+    DONE,
     IN_PROGRESS,
     NEEDS_CLARIFICATION,
     ON_REVIEW,
@@ -25,6 +26,7 @@ from app.errors import ApiError
 from app.modules.auth.models import Citizen, User
 from app.modules.geo import service as geo
 from app.modules.geo.models import Contractor, District
+from app.modules.media import service as media
 from app.modules.media.models import Photo
 from app.modules.media.service import photo_url
 from app.modules.notifications.models import Notification
@@ -32,11 +34,15 @@ from app.modules.requests.models import Request, RequestEvent
 from app.modules.requests.schemas import (
     Applicant,
     CitizenRequestOut,
+    ClassChange,
+    ContractorAssign,
+    ContractorRequestOut,
     DispatcherRequestOut,
     EventOut,
     RequestCreate,
     RequestSummary,
     StatusChange,
+    StreetGroupChange,
 )
 from app.schemas import Page, Point, Ref, StatusOut
 
@@ -215,6 +221,173 @@ def dispatcher_change_status(
     )
     session.commit()
     return dispatcher_card(session, request_id)
+
+
+# --- Решения диспетчера: класс, группа, подрядчик ---------------------------------------
+
+
+def change_class(
+    session: Session, actor_id: int, request_id: int, body: ClassChange
+) -> DispatcherRequestOut:
+    """Класс правится только до принятия (В-5); рекомендация считается заново при показе."""
+    request = lock(session, request_id)
+    check_version(request, body.version)
+    if request.status not in rules.CLASS_EDITABLE_STATUSES:
+        raise ApiError(409, "class_locked", "Класс меняется только до решения по заявке")
+    if body.defect_class != request.defect_class:
+        add_event(
+            session,
+            request.id,
+            "class_changed",
+            actor_id,
+            **{"from": request.defect_class, "to": body.defect_class},
+        )
+        request.defect_class = body.defect_class
+        request.class_source = "dispatcher"
+        request.version += 1
+    session.commit()
+    return dispatcher_card(session, request_id)
+
+
+def change_street_group(
+    session: Session, actor_id: int, request_id: int, body: StreetGroupChange
+) -> DispatcherRequestOut:
+    """Группа улицы до решения (REQ-057, В-3); срок пересчитывается от момента обнаружения."""
+    request = lock(session, request_id)
+    check_version(request, body.version)
+    if request.status not in rules.GROUP_EDITABLE_STATUSES:
+        raise ApiError(409, "group_locked", "Группа улицы меняется только до решения по заявке")
+    if body.street_group != request.street_group:
+        add_event(
+            session,
+            request.id,
+            "group_changed",
+            actor_id,
+            **{"from": request.street_group, "to": body.street_group},
+        )
+        request.street_group = body.street_group
+        request.planned_due_at = rules.due_at(
+            request.detected_at, geo.deadline_hours(session, body.street_group)
+        )
+        request.version += 1
+    session.commit()
+    return dispatcher_card(session, request_id)
+
+
+def assign_contractor(
+    session: Session, actor_id: int, request_id: int, body: ContractorAssign
+) -> DispatcherRequestOut:
+    """Назначить или сменить подрядчика (REQ-058). «Принято» сразу уходит в «В работе»."""
+    request = lock(session, request_id)
+    check_version(request, body.version)
+    if request.status in (REJECTED, DONE):
+        raise ApiError(409, "request_closed", "Заявка закрыта: подрядчика уже не назначить")
+    contractor = session.get(Contractor, body.contractor_id)
+    if contractor is None or not contractor.is_active:
+        raise ApiError(422, "contractor_inactive", "Подрядчик не найден или неактивен (В-7)")
+    if contractor.id != request.contractor_id:
+        add_event(
+            session,
+            request.id,
+            "contractor_changed",
+            actor_id,
+            **{"from": request.contractor_id, "to": contractor.id},
+        )
+        request.contractor_id = contractor.id
+        request.version += 1
+        session.flush()
+    if request.status == ACCEPTED:
+        change_status(session, request, IN_PROGRESS, None, rules.SYSTEM)
+    session.commit()
+    return dispatcher_card(session, request_id)
+
+
+def request_events(session: Session, request_id: int) -> list[EventOut]:
+    if session.get(Request, request_id) is None:
+        raise not_found()
+    return events_of(session, request_id)
+
+
+# --- Подрядчик ----------------------------------------------------------------------------
+
+CONTRACTOR_STATUSES = (ACCEPTED, IN_PROGRESS, DONE)
+
+
+def contractor_requests(
+    session: Session, contractor_id: int, paging: Pagination, overdue: bool | None
+) -> Page[RequestSummary]:
+    """Заявки своей организации (REQ-061): сначала в работе с ближним сроком, потом выполненные."""
+    now = datetime.now(UTC)
+    query = select(Request).where(
+        Request.contractor_id == contractor_id,
+        Request.status.in_(CONTRACTOR_STATUSES),
+        Request.merged_into_id.is_(None),
+    )
+    if overdue is not None:
+        late = Request.status.in_(rules.OVERDUE_STATUSES) & (Request.planned_due_at < now)
+        query = query.where(late if overdue else ~late)
+    total = session.scalar(select(func.count()).select_from(query.subquery()))
+    rows = session.scalars(
+        query.order_by(
+            (Request.status == DONE).asc(),
+            Request.planned_due_at.asc().nulls_last(),
+            Request.id,
+        )
+        .limit(paging.limit)
+        .offset(paging.offset)
+    )
+    return Page(
+        items=[RequestSummary(**summary_fields(r, now)) for r in rows],
+        total=total,
+        limit=paging.limit,
+        offset=paging.offset,
+    )
+
+
+def _own_request(session: Session, contractor_id: int, request_id: int) -> Request:
+    request = session.get(Request, request_id)
+    if (
+        request is None
+        or request.contractor_id != contractor_id
+        or request.status not in CONTRACTOR_STATUSES
+    ):
+        raise not_found()  # чужая заявка — 404, как будто её нет
+    return request
+
+
+def contractor_card(session: Session, contractor_id: int, request_id: int) -> ContractorRequestOut:
+    """Без данных заявителя и заметок (REQ-061)."""
+    request = _own_request(session, contractor_id, request_id)
+    return ContractorRequestOut(
+        **summary_fields(request, datetime.now(UTC)),
+        location=location_of(session, request.id),
+        house_number=request.house_number,
+        street_group=request.street_group,
+        photo_before_url=photo_url(request.before_photo_id),
+        photo_after_url=photo_url(after_photo_id(session, request)),
+        completed_at=request.completed_at,
+        version=request.version,
+    )
+
+
+def complete(
+    session: Session, actor_id: int, contractor_id: int, request_id: int, data: bytes
+) -> ContractorRequestOut:
+    """«Выполнено»: фото «после», дата и статус одной транзакцией (REQ-063).
+
+    Фото «после» моделью не проверяется (В-20), только формат и размер.
+    """
+    _own_request(session, contractor_id, request_id)
+    request = lock(session, request_id)
+    if request.status != IN_PROGRESS:
+        raise ApiError(409, "transition_not_allowed", "Выполнить можно только заявку «В работе»")
+    info = media.check_image(data)
+    photo = media.save_photo(session, actor_id, data, info)
+    request.after_photo_id = photo.id
+    request.completed_at = datetime.now(UTC)
+    change_status(session, request, DONE, actor_id, "contractor")
+    session.commit()
+    return contractor_card(session, contractor_id, request_id)
 
 
 # --- Карточка диспетчера -----------------------------------------------------------------
