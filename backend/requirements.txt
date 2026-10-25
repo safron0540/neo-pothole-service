@@ -14,5 +14,9 @@ geoalchemy2==0.20.0
 argon2-cffi==25.1.0
 pyjwt==2.15.0
 
-# Приём файлов multipart/form-data: фото «до» и «после»
+# Приём файлов multipart/form-data: фото «до» и «после»; проверка формата и размера
 python-multipart==0.0.32
+pillow==12.3.0
+
+# HTTP-клиент для ML-сервиса (им же пользуется TestClient в тестах)
+httpx2==2.13.1

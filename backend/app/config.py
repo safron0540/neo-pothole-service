@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     consent_version: str = "1.0"
 
     photos_dir: str = "/data/photos"
+    photo_max_bytes: int = 10 * 1024 * 1024  # В-21: больше — 413
+    photo_url_minutes: int = 15  # срок подписанной ссылки на фото
 
     ml_url: str = "http://127.0.0.1:8001"
     ml_timeout_seconds: float = 8.0
