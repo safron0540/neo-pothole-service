@@ -12,3 +12,6 @@ geoalchemy2==0.20.0
 
 # Хэш паролей (БЗ-2); пока нужен seed_demo.py, дальше — вход в PR 2-2
 argon2-cffi==25.1.0
+
+# Приём файлов multipart/form-data: фото «до» и «после»
+python-multipart==0.0.32

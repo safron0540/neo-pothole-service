@@ -20,7 +20,7 @@ docker compose ps                    # db и backend в состоянии healt
 curl http://localhost:8000/api/v1/health   # Windows PowerShell: curl.exe
 ```
 
-Swagger: http://localhost:8000/api/docs. Остановить: `docker compose down` (данные базы сохраняются в томе `pgdata`; удалить их: `docker compose down -v`).
+Swagger: http://localhost:8000/api/docs. Контракт API v1 для веба и мобильного приложения — [`docs/openapi.json`](docs/openapi.json) (запросы с ответом 501 описаны, но ещё не сделаны; после правки схем: `python -m scripts.export_openapi`). Остановить: `docker compose down` (данные базы сохраняются в томе `pgdata`; удалить их: `docker compose down -v`).
 
 ### База и демо-данные
 
