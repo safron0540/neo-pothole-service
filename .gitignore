@@ -78,3 +78,6 @@ backups/
 
 # Скрипт деплоя живёт только на сервере (/workspace/deploy.sh)
 /deploy.sh
+
+
+!frontend/src/data/
