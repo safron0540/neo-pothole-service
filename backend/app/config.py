@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     building_match_radius_m: float = 30
     duplicate_radius_m: float = 15
 
+    # Адреса веба через запятую: только им браузер разрешит запросы к API (БЗ-1)
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
     @model_validator(mode="after")
     def _secret_is_set_in_prod(self) -> "Settings":
         # На сервере нельзя случайно запуститься с секретом из примера
