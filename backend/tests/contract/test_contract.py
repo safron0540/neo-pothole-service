@@ -68,7 +68,14 @@ MVP = {
     ("patch", "/users/{user_id}"),
     ("post", "/users/{user_id}/reset-password"),
 }
-PUBLIC = {"/health", "/auth/citizen/register", "/auth/citizen/login", "/auth/staff/login"}
+# Фото по подписанной ссылке: подпись заменяет токен
+PUBLIC = {
+    "/health",
+    "/auth/citizen/register",
+    "/auth/citizen/login",
+    "/auth/staff/login",
+    "/photos/{photo_id}",
+}
 
 
 def operations():
