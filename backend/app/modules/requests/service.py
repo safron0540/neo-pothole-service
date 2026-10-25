@@ -1,7 +1,7 @@
-"""Заявки: подача с автообработкой и просмотр гражданином. Один сценарий — одна транзакция.
+"""Заявки: подача с автообработкой, смена статуса, просмотр. Один сценарий — одна транзакция.
 
-Статус заявки меняет только change_status() (PR 2-6). Адрес, дом, район и группа
-копируются в заявку при подаче (снимок) и потом не зависят от справочников.
+Статус заявки меняет только change_status(). Адрес, дом, район и группа копируются
+в заявку при подаче (снимок) и потом не зависят от справочников.
 """
 
 import uuid
@@ -12,21 +12,33 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core import rules
-from app.core.statuses import ON_REVIEW
+from app.core.statuses import (
+    ACCEPTED,
+    IN_PROGRESS,
+    NEEDS_CLARIFICATION,
+    ON_REVIEW,
+    REJECTED,
+    status_label,
+)
 from app.deps import Pagination
 from app.errors import ApiError
-from app.modules.auth.models import User
+from app.modules.auth.models import Citizen, User
 from app.modules.geo import service as geo
+from app.modules.geo.models import Contractor, District
 from app.modules.media.models import Photo
 from app.modules.media.service import photo_url
+from app.modules.notifications.models import Notification
 from app.modules.requests.models import Request, RequestEvent
 from app.modules.requests.schemas import (
+    Applicant,
     CitizenRequestOut,
+    DispatcherRequestOut,
     EventOut,
     RequestCreate,
     RequestSummary,
+    StatusChange,
 )
-from app.schemas import Page, Point, StatusOut
+from app.schemas import Page, Point, Ref, StatusOut
 
 SYSTEM_ACTOR = "Система"  # В-9
 CITIZEN_EVENTS = ("created", "status_changed")  # автообработку гражданину не показываем
@@ -44,6 +56,15 @@ def location_of(session: Session, request_id: int) -> Point:
         {"id": request_id},
     ).one()
     return Point(lat=lat, lon=lon)
+
+
+def after_photo_id(session: Session, request: Request) -> uuid.UUID | None:
+    """У слитой заявки фото «после» берётся у основной (docs/architecture.md, 10.4)."""
+    if request.merged_into_id is None:
+        return request.after_photo_id
+    return session.scalar(
+        select(Request.after_photo_id).where(Request.id == request.merged_into_id)
+    )
 
 
 def summary_fields(request: Request, now: datetime) -> dict:
@@ -93,6 +114,160 @@ def add_event(
     session.add(event)
     session.flush()
     return event
+
+
+# --- Смена статуса ----------------------------------------------------------------------
+
+
+def lock(session: Session, request_id: int) -> Request:
+    """Заявка с блокировкой строки до конца транзакции (SELECT … FOR UPDATE)."""
+    request = session.scalar(
+        select(Request)
+        .where(Request.id == request_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if request is None:
+        raise not_found()
+    return request
+
+
+def check_version(request: Request, version: int) -> None:
+    if request.version != version:
+        raise ApiError(
+            409,
+            "version_conflict",
+            "Заявку уже изменили: обновите карточку и повторите действие",
+            {"version": request.version},
+        )
+
+
+def notify_author(session: Session, request: Request, event: RequestEvent) -> None:
+    """Уведомление гражданину на каждую смену статуса (REQ-031, В-6)."""
+    session.add(
+        Notification(
+            user_id=request.author_id,
+            request_id=request.id,
+            event_id=event.id,
+            title=f"Заявка № {request.id}",
+            body=f"Статус изменён: {status_label(request.status)}",
+        )
+    )
+
+
+def change_status(
+    session: Session,
+    request: Request,
+    target: str,
+    actor_id: int | None,
+    actor_role: str,
+    comment: str | None = None,
+    reject_reason: str | None = None,
+) -> None:
+    """Единственное место, где меняется статус (железное правило 1).
+
+    Строка уже заблокирована lock(), version проверил вызывающий сценарий. Здесь —
+    переход и роль, событие и уведомление; «Принято» с назначенным подрядчиком сразу
+    переходит в «В работе» (REQ-043, В-6: два уведомления). Коммит делает сценарий.
+    """
+    current = request.status
+    if not rules.is_transition(current, target):
+        raise ApiError(
+            409,
+            "transition_not_allowed",
+            f"Нельзя перевести заявку из «{status_label(current)}» в «{status_label(target)}»",
+        )
+    if not rules.can_transition(current, target, actor_role):
+        raise ApiError(403, "forbidden", "Этот переход выполняет другая роль")
+    if target == REJECTED and not (comment and comment.strip() and reject_reason):
+        raise ApiError(422, "reject_reason_required", "Укажите причину отклонения и комментарий")
+    if target == ACCEPTED and request.planned_due_at is None:
+        raise ApiError(
+            409, "street_group_required", "Укажите группу улицы: без неё нет срока устранения"
+        )
+
+    request.status = target
+    request.version += 1
+    if target in (ACCEPTED, REJECTED, NEEDS_CLARIFICATION):
+        request.decision_comment = comment
+        request.reject_reason = reject_reason if target == REJECTED else None
+    session.flush()
+    payload = {"from": current, "to": target}
+    if comment:
+        payload["comment"] = comment
+    if target == REJECTED:
+        payload["reject_reason"] = reject_reason
+    event = add_event(session, request.id, "status_changed", actor_id, **payload)
+    notify_author(session, request, event)
+
+    if target == ACCEPTED and request.contractor_id is not None:
+        change_status(session, request, IN_PROGRESS, None, rules.SYSTEM)
+
+
+def dispatcher_change_status(
+    session: Session, actor_id: int, request_id: int, body: StatusChange
+) -> DispatcherRequestOut:
+    """PATCH /requests/{id}/status: принять, отклонить, уточнить (UC-05)."""
+    request = lock(session, request_id)
+    check_version(request, body.version)
+    change_status(
+        session, request, body.to, actor_id, "dispatcher", body.comment, body.reject_reason
+    )
+    session.commit()
+    return dispatcher_card(session, request_id)
+
+
+# --- Карточка диспетчера -----------------------------------------------------------------
+
+
+def ref(session: Session, model, object_id: int | None) -> Ref | None:
+    if object_id is None:
+        return None
+    row = session.get(model, object_id)
+    return Ref(id=row.id, name=row.name) if row else None
+
+
+def dispatcher_card(session: Session, request_id: int) -> DispatcherRequestOut:
+    """Полная карточка; телефон заявителя только в «Требует уточнения» (REQ-047, В-27)."""
+    request = session.get(Request, request_id)
+    if request is None:
+        raise not_found()
+    applicant = None
+    if request.status == NEEDS_CLARIFICATION:
+        user, phone = session.execute(
+            select(User, Citizen.phone)
+            .join(Citizen, Citizen.user_id == User.id)
+            .where(User.id == request.author_id)
+        ).one()
+        applicant = Applicant(first_name=user.first_name, last_name=user.last_name, phone=phone)
+    return DispatcherRequestOut(
+        **summary_fields(request, datetime.now(UTC)),
+        street_group=request.street_group,
+        district=ref(session, District, request.district_id),
+        contractor=ref(session, Contractor, request.contractor_id),
+        duplicates_count=request.duplicates_count,
+        duplicate_of_id=request.duplicate_of_id,
+        needs_group=request.street_group is None,
+        needs_contractor=request.contractor_id is None,
+        location=location_of(session, request.id),
+        accuracy_m=request.accuracy_m,
+        house_number=request.house_number,
+        street_id=request.street_id,
+        model_class=request.model_class,
+        class_source=request.class_source,
+        pits_count=request.pits_count,
+        must_fix=rules.must_fix(request.defect_class),
+        recommendation=StatusOut.of(rules.recommendation(request.defect_class)),
+        reject_reason=request.reject_reason,
+        decision_comment=request.decision_comment,
+        citizen_comment=request.citizen_comment,
+        merged_into_id=request.merged_into_id,
+        completed_at=request.completed_at,
+        photo_before_url=photo_url(request.before_photo_id),
+        photo_after_url=photo_url(after_photo_id(session, request)),
+        applicant=applicant,
+        version=request.version,
+    )
 
 
 # --- Подача ----------------------------------------------------------------------------
@@ -224,17 +399,11 @@ def citizen_request(session: Session, author_id: int, request_id: int) -> Citize
     request = session.get(Request, request_id)
     if request is None or request.author_id != author_id:
         raise not_found()
-    after_photo = request.after_photo_id
-    if request.merged_into_id is not None:
-        # У слитой заявки фото «после» берётся у основной (docs/architecture.md, 10.4)
-        after_photo = session.scalar(
-            select(Request.after_photo_id).where(Request.id == request.merged_into_id)
-        )
     return CitizenRequestOut(
         **summary_fields(request, datetime.now(UTC)),
         location=location_of(session, request.id),
         citizen_comment=request.citizen_comment,
         photo_before_url=photo_url(request.before_photo_id),
-        photo_after_url=photo_url(after_photo),
+        photo_after_url=photo_url(after_photo_id(session, request)),
         history=events_of(session, request.id, CITIZEN_EVENTS),
     )
