@@ -66,3 +66,18 @@ local.properties
 *.swo
 .DS_Store
 Thumbs.db
+
+# Данные проекта: выгрузки OSM, загруженные фото, бэкапы БД
+data/
+photos/
+backups/
+*.dump
+
+# Кэш линтера
+.ruff_cache/
+
+# Скрипт деплоя живёт только на сервере (/workspace/deploy.sh)
+/deploy.sh
+
+
+!frontend/src/data/
