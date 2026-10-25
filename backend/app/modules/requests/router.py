@@ -8,8 +8,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Query, Response, UploadFile, status
 
-from app.deps import CitizenUser, DbSession, DispatcherUser, Paging, Token
+from app.deps import CitizenUser, ContractorStaff, DbSession, DispatcherUser, Paging, Token
 from app.errors import ERROR_RESPONSES, not_implemented
+from app.modules.media.router import read_limited
 from app.modules.requests import service
 from app.modules.requests.schemas import (
     CitizenRequestOut,
@@ -107,8 +108,8 @@ def list_requests(
     tags=["dispatcher"],
     summary="Карточка заявки",
 )
-def get_request(request_id: int, token: Token) -> DispatcherRequestOut:
-    not_implemented()
+def get_request(request_id: int, user: DispatcherUser, session: DbSession) -> DispatcherRequestOut:
+    return service.dispatcher_card(session, request_id)
 
 
 @router.get(
@@ -117,8 +118,8 @@ def get_request(request_id: int, token: Token) -> DispatcherRequestOut:
     tags=["dispatcher"],
     summary="История заявки",
 )
-def request_events(request_id: int, token: Token) -> list[EventOut]:
-    not_implemented()
+def request_events(request_id: int, user: DispatcherUser, session: DbSession) -> list[EventOut]:
+    return service.request_events(session, request_id)
 
 
 @router.patch(
@@ -141,9 +142,11 @@ def change_status(
     tags=["dispatcher"],
     summary="Правка класса ямы",
 )
-def change_class(request_id: int, body: ClassChange, token: Token) -> DispatcherRequestOut:
-    """Только в «На проверке» и «Требует уточнения» (В-5); пересчитывает рекомендацию и срок."""
-    not_implemented()
+def change_class(
+    request_id: int, body: ClassChange, user: DispatcherUser, session: DbSession
+) -> DispatcherRequestOut:
+    """Только в «На проверке» и «Требует уточнения» (В-5); рекомендация пересчитывается."""
+    return service.change_class(session, user.id, request_id, body)
 
 
 @router.patch(
@@ -153,9 +156,10 @@ def change_class(request_id: int, body: ClassChange, token: Token) -> Dispatcher
     summary="Правка группы улицы",
 )
 def change_street_group(
-    request_id: int, body: StreetGroupChange, token: Token
+    request_id: int, body: StreetGroupChange, user: DispatcherUser, session: DbSession
 ) -> DispatcherRequestOut:
-    not_implemented()
+    """До решения по заявке (В-3); срок пересчитывается от момента обнаружения."""
+    return service.change_street_group(session, user.id, request_id, body)
 
 
 @router.put(
@@ -165,10 +169,10 @@ def change_street_group(
     summary="Назначить или сменить подрядчика",
 )
 def assign_contractor(
-    request_id: int, body: ContractorAssign, token: Token
+    request_id: int, body: ContractorAssign, user: DispatcherUser, session: DbSession
 ) -> DispatcherRequestOut:
-    """Если заявка «Принято», она сразу переходит в «В работе»."""
-    not_implemented()
+    """Если заявка «Принято», она сразу переходит в «В работе». Неактивный подрядчик — 422."""
+    return service.assign_contractor(session, user.id, request_id, body)
 
 
 @router.post(
@@ -245,9 +249,9 @@ def map_points(
     summary="Заявки моей организации",
 )
 def contractor_requests(
-    token: Token, paging: Paging, overdue: bool | None = None
+    user: ContractorStaff, paging: Paging, session: DbSession, overdue: bool | None = None
 ) -> Page[RequestSummary]:
-    not_implemented()
+    return service.contractor_requests(session, user.contractor_id, paging, overdue)
 
 
 @router.get(
@@ -256,9 +260,11 @@ def contractor_requests(
     tags=["contractor"],
     summary="Заявка моей организации",
 )
-def contractor_request(request_id: int, token: Token) -> ContractorRequestOut:
+def contractor_request(
+    request_id: int, user: ContractorStaff, session: DbSession
+) -> ContractorRequestOut:
     """Чужая заявка — 404."""
-    not_implemented()
+    return service.contractor_card(session, user.contractor_id, request_id)
 
 
 @router.post(
@@ -270,7 +276,9 @@ def contractor_request(request_id: int, token: Token) -> ContractorRequestOut:
 def complete_request(
     request_id: int,
     image: Annotated[UploadFile, File(description="фото «после»: JPEG или PNG")],
-    token: Token,
+    user: ContractorStaff,
+    session: DbSession,
 ) -> ContractorRequestOut:
     """Фото, статус «Выполнено» и дата выполнения — одной транзакцией (REQ-063)."""
-    not_implemented()
+    data = read_limited(image)
+    return service.complete(session, user.id, user.contractor_id, request_id, data)
