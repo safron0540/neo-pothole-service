@@ -8,7 +8,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Query, Response, UploadFile, status
 
-from app.deps import CitizenUser, DbSession, Paging, Token
+from app.deps import CitizenUser, DbSession, DispatcherUser, Paging, Token
 from app.errors import ERROR_RESPONSES, not_implemented
 from app.modules.requests import service
 from app.modules.requests.schemas import (
@@ -127,9 +127,12 @@ def request_events(request_id: int, token: Token) -> list[EventOut]:
     tags=["dispatcher"],
     summary="Смена статуса: принять, отклонить, уточнить",
 )
-def change_status(request_id: int, body: StatusChange, token: Token) -> DispatcherRequestOut:
-    """409 — заявку уже изменили (version) или переход не разрешён таблицей ЧТЗ."""
-    not_implemented()
+def change_status(
+    request_id: int, body: StatusChange, user: DispatcherUser, session: DbSession
+) -> DispatcherRequestOut:
+    """409 — заявку уже изменили (version) или переход не разрешён таблицей ЧТЗ.
+    При отклонении нужны comment и reject_reason (422); «Принято» без группы улицы — 409."""
+    return service.dispatcher_change_status(session, user.id, request_id, body)
 
 
 @router.patch(

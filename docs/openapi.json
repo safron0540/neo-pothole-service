@@ -1620,7 +1620,7 @@
           "dispatcher"
         ],
         "summary": "Смена статуса: принять, отклонить, уточнить",
-        "description": "409 — заявку уже изменили (version) или переход не разрешён таблицей ЧТЗ.",
+        "description": "409 — заявку уже изменили (version) или переход не разрешён таблицей ЧТЗ.\nПри отклонении нужны comment и reject_reason (422); «Принято» без группы улицы — 409.",
         "operationId": "change_status_api_v1_requests__request_id__status_patch",
         "security": [
           {
