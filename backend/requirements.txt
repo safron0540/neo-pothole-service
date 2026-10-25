@@ -10,8 +10,9 @@ psycopg[binary]==3.3.6
 alembic==1.20.0
 geoalchemy2==0.20.0
 
-# Хэш паролей (БЗ-2); пока нужен seed_demo.py, дальше — вход в PR 2-2
+# Хэш паролей (БЗ-2) и access-токены JWT
 argon2-cffi==25.1.0
+pyjwt==2.15.0
 
 # Приём файлов multipart/form-data: фото «до» и «после»
 python-multipart==0.0.32
