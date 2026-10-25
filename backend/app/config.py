@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     jwt_secret: str = DEV_JWT_SECRET
     jwt_access_minutes: int = 30
     jwt_refresh_days: int = 14
+    # Версия текста согласий на ПДн и геолокацию, которую принимает гражданин (БЗ-4)
+    consent_version: str = "1.0"
 
     photos_dir: str = "/data/photos"
 
