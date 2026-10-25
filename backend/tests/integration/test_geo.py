@@ -4,61 +4,17 @@
 с загруженными из OSM данными. Точки на нужном расстоянии строит ST_Project.
 """
 
-import uuid
-
 import pytest
-from sqlalchemy import text
 
 from app.modules.geo import service as geo
-from tests.integration.conftest import add_contractor, add_user
-
-START, END = (100.0, 60.0), (100.01, 60.0)  # ≈ 557 м по параллели
-
-
-def add_street(session, name="улица Тестовая", group="Б", district="Тестовый район") -> int:
-    district_id = session.execute(
-        text(
-            "INSERT INTO districts (name) VALUES (:n)"
-            " ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id"
-        ),
-        {"n": district},
-    ).scalar_one()
-    line = f"SRID=4326;LINESTRING({START[0]} {START[1]}, {END[0]} {END[1]})"
-    return session.execute(
-        text(
-            "INSERT INTO streets (name, street_group, district_id, geom)"
-            " VALUES (:n, :g, :d, ST_GeogFromText(:line)) RETURNING id"
-        ),
-        {"n": name, "g": group, "d": district_id, "line": line},
-    ).scalar_one()
-
-
-def point_near(session, fraction: float, meters: float, azimuth_deg: float = 0) -> tuple:
-    """(lat, lon) в meters от точки линии на доле fraction, по азимуту (0 — север)."""
-    row = session.execute(
-        text(
-            "SELECT ST_Y(p::geometry), ST_X(p::geometry) FROM (SELECT ST_Project("
-            " ST_LineInterpolatePoint(ST_GeomFromText(:line, 4326), :f)::geography,"
-            " :m, radians(:az)) AS p) s"
-        ),
-        {
-            "line": f"LINESTRING({START[0]} {START[1]}, {END[0]} {END[1]})",
-            "f": fraction,
-            "m": meters,
-            "az": azimuth_deg,
-        },
-    ).one()
-    return row[0], row[1]
-
-
-def add_building(session, lat, lon, number="7") -> None:
-    session.execute(
-        text(
-            "INSERT INTO buildings (osm_type, osm_id, house_number, geom)"
-            " VALUES ('n', :id, :num, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography)"
-        ),
-        {"id": uuid.uuid4().int % 10**12, "num": number, "lat": lat, "lon": lon},
-    )
+from tests.integration.conftest import (
+    ZONE,
+    add_building,
+    add_contractor,
+    add_request,
+    add_street,
+    point_near,
+)
 
 
 def test_req_039_street_within_30m_found(session):
@@ -101,11 +57,6 @@ def test_street_without_group_gives_empty_group(session):
     assert match.street_id is not None and match.street_group is None
 
 
-ZONE = (
-    "SRID=4326;MULTIPOLYGON(((99.99 59.99, 100.02 59.99, 100.02 60.01, 99.99 60.01, 99.99 59.99)))"
-)
-
-
 def test_req_041_contractor_by_zone(session):
     contractor_id = add_contractor(session, ZONE)
     assert geo.find_contractor(session, 60.0, 100.005) == contractor_id
@@ -115,38 +66,6 @@ def test_req_041_contractor_by_zone(session):
 def test_v_7_inactive_contractor_not_assigned(session):
     add_contractor(session, ZONE, is_active=False)
     assert geo.find_contractor(session, 60.0, 100.005) is None
-
-
-def add_request(session, lat, lon, defect_class="big", status="on_review", **fields) -> int:
-    author = add_user(session, "citizen")["id"]
-    photo_id = uuid.uuid4()
-    session.execute(
-        text(
-            "INSERT INTO photos (id, uploader_id, path, mime_type, size_bytes, width, height)"
-            " VALUES (:id, :u, 'x.jpg', 'image/jpeg', 1, 1280, 720)"
-        ),
-        {"id": photo_id, "u": author},
-    )
-    values = {
-        "client_request_id": uuid.uuid4(),
-        "author_id": author,
-        "before_photo_id": photo_id,
-        "defect_class": defect_class,
-        "class_source": "model",
-        "status": status,
-        "lat": lat,
-        "lon": lon,
-        **fields,
-    }
-    columns = [k for k in values if k not in ("lat", "lon")]
-    return session.execute(
-        text(
-            f"INSERT INTO requests ({', '.join(columns)}, location) VALUES"
-            f" ({', '.join(':' + c for c in columns)},"
-            " ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) RETURNING id"
-        ),
-        values,
-    ).scalar_one()
 
 
 @pytest.mark.parametrize(("meters", "found"), [(14.5, True), (16, False)])
