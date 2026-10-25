@@ -2357,7 +2357,7 @@
           "dispatcher"
         ],
         "summary": "Заявки на карте",
-        "description": "Те же фильтры, что у /requests; отдаются только видимая область и минимум полей.",
+        "description": "Те же фильтры, что у /requests (отчёт = карта); только видимая область.\nbbox в порядке Leaflet map.getBounds().toBBoxString(): запад,юг,восток,север.",
         "operationId": "map_points_api_v1_map_points_get",
         "security": [
           {
@@ -2443,6 +2443,30 @@
             }
           },
           {
+            "name": "street_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "А",
+                    "Б",
+                    "В",
+                    "Г",
+                    "Д",
+                    "Е"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Street Group"
+            }
+          },
+          {
             "name": "contractor_id",
             "in": "query",
             "required": false,
@@ -2456,6 +2480,40 @@
                 }
               ],
               "title": "Contractor Id"
+            }
+          },
+          {
+            "name": "detected_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected From"
+            }
+          },
+          {
+            "name": "detected_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected To"
             }
           }
         ],
@@ -5098,16 +5156,11 @@
             "contentMediaType": "application/octet-stream",
             "title": "Image",
             "description": "фото «после»: JPEG или PNG"
-          },
-          "version": {
-            "type": "integer",
-            "title": "Version"
           }
         },
         "type": "object",
         "required": [
-          "image",
-          "version"
+          "image"
         ],
         "title": "Body_complete_request_api_v1_contractor_requests__request_id__complete_post"
       },
@@ -5717,6 +5770,11 @@
             "type": "boolean",
             "title": "Needs Contractor"
           },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "передаётся в действиях диспетчера; при конфликте 409"
+          },
           "location": {
             "$ref": "#/components/schemas/Point"
           },
@@ -5876,11 +5934,6 @@
               }
             ],
             "description": "только в статусе «Требует уточнения» (В-27)"
-          },
-          "version": {
-            "type": "integer",
-            "title": "Version",
-            "description": "передаётся в действиях диспетчера; при конфликте 409"
           }
         },
         "type": "object",
@@ -5899,6 +5952,7 @@
           "duplicate_of_id",
           "needs_group",
           "needs_contractor",
+          "version",
           "location",
           "accuracy_m",
           "house_number",
@@ -5915,8 +5969,7 @@
           "completed_at",
           "photo_before_url",
           "photo_after_url",
-          "applicant",
-          "version"
+          "applicant"
         ],
         "title": "DispatcherRequestOut"
       },
@@ -6028,6 +6081,11 @@
           "needs_contractor": {
             "type": "boolean",
             "title": "Needs Contractor"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "для действий диспетчера прямо из списка"
           }
         },
         "type": "object",
@@ -6045,7 +6103,8 @@
           "duplicates_count",
           "duplicate_of_id",
           "needs_group",
-          "needs_contractor"
+          "needs_contractor",
+          "version"
         ],
         "title": "DispatcherRequestSummary"
       },
@@ -6298,6 +6357,71 @@
           "is_overdue": {
             "type": "boolean",
             "title": "Is Overdue"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "street_group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "А",
+                  "Б",
+                  "В",
+                  "Г",
+                  "Д",
+                  "Е"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Street Group"
+          },
+          "district": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contractor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detected_at": {
+            "type": "string",
+            "title": "Detected At"
+          },
+          "planned_due_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Due At"
           }
         },
         "type": "object",
@@ -6307,9 +6431,16 @@
           "lon",
           "status",
           "defect_class",
-          "is_overdue"
+          "is_overdue",
+          "address",
+          "street_group",
+          "district",
+          "contractor",
+          "detected_at",
+          "planned_due_at"
         ],
-        "title": "MapPoint"
+        "title": "MapPoint",
+        "description": "Маркер карты и поля для всплывающей подсказки; полная карточка — /requests/{id}."
       },
       "MarkRead": {
         "properties": {

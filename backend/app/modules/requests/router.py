@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Query, UploadFile, status
+from fastapi import APIRouter, File, Query, UploadFile, status
 
 from app.deps import Paging, Token
 from app.errors import ERROR_RESPONSES, not_implemented
@@ -213,9 +213,13 @@ def map_points(
     status_: Annotated[list[StatusCode] | None, Query(alias="status")] = None,
     defect_class: DefectClass | None = None,
     district_id: int | None = None,
+    street_group: StreetGroup | None = None,
     contractor_id: int | None = None,
+    detected_from: datetime | None = None,
+    detected_to: datetime | None = None,
 ) -> list[MapPoint]:
-    """Те же фильтры, что у /requests; отдаются только видимая область и минимум полей."""
+    """Те же фильтры, что у /requests (отчёт = карта); только видимая область.
+    bbox в порядке Leaflet map.getBounds().toBBoxString(): запад,юг,восток,север."""
     not_implemented()
 
 
@@ -254,7 +258,6 @@ def contractor_request(request_id: int, token: Token) -> ContractorRequestOut:
 def complete_request(
     request_id: int,
     image: Annotated[UploadFile, File(description="фото «после»: JPEG или PNG")],
-    version: Annotated[int, Form()],
     token: Token,
 ) -> ContractorRequestOut:
     """Фото, статус «Выполнено» и дата выполнения — одной транзакцией (REQ-063)."""
