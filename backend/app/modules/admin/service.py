@@ -233,6 +233,23 @@ def _phone(value: str) -> str:
     return phone
 
 
+def check_zone_overlap(session: Session, zone: str, exclude_id: int | None) -> None:
+    """Зоны действующих подрядчиков не пересекаются (В-19): общая граница допустима,
+    общая площадь — нет. Иначе точка попала бы в две зоны сразу."""
+    clash = session.execute(
+        text(
+            "SELECT name FROM contractors WHERE is_active AND zone IS NOT NULL AND id <> :id"
+            " AND ST_Intersects(zone::geometry, ST_GeomFromEWKT(:z))"
+            " AND NOT ST_Touches(zone::geometry, ST_GeomFromEWKT(:z)) ORDER BY name LIMIT 1"
+        ),
+        {"z": zone, "id": exclude_id or 0},
+    ).scalar_one_or_none()
+    if clash is not None:
+        raise ApiError(
+            422, "zone_overlap", f"Зона пересекается с зоной подрядчика «{clash}»", {"with": clash}
+        )
+
+
 def list_contractors(session: Session, is_active: bool | None) -> list[ContractorOut]:
     query = select(Contractor).order_by(Contractor.name)
     if is_active is not None:
@@ -241,11 +258,11 @@ def list_contractors(session: Session, is_active: bool | None) -> list[Contracto
 
 
 def create_contractor(session: Session, body: ContractorIn) -> ContractorOut:
+    zone = geography(session, body.zone.model_dump(), "Зона") if body.zone else None
+    if zone:
+        check_zone_overlap(session, zone, None)
     contractor = Contractor(
-        name=body.name.strip(),
-        phone=_phone(body.phone),
-        email=body.email.strip(),
-        zone=geography(session, body.zone.model_dump(), "Зона") if body.zone else None,
+        name=body.name.strip(), phone=_phone(body.phone), email=body.email.strip(), zone=zone
     )
     session.add(contractor)
     _commit_or_conflict(session, ApiError(409, "name_taken", "Подрядчик с таким именем уже есть"))
@@ -266,13 +283,27 @@ def update_contractor(
         contractor.phone = _phone(changes["phone"])
     if changes.get("email") is not None:
         contractor.email = changes["email"].strip()
+    new_zone = None
     if "zone" in changes:
-        zone = changes["zone"]
-        contractor.zone = geography(session, zone, "Зона") if zone else None
-    if changes.get("is_active") is not None:
-        contractor.is_active = changes["is_active"]  # В-7: неактивному ничего не назначается
+        new_zone = geography(session, changes["zone"], "Зона") if changes["zone"] else None
+    active = changes["is_active"] if changes.get("is_active") is not None else contractor.is_active
+    # Итоговую зону проверяем до записи: и при её смене, и когда подрядчика снова включают
+    if active and ("zone" in changes or changes.get("is_active")):
+        final_zone = new_zone if "zone" in changes else _zone_ewkt(session, contractor.id)
+        if final_zone:
+            check_zone_overlap(session, final_zone, contractor.id)
+    if "zone" in changes:
+        contractor.zone = new_zone
+    contractor.is_active = active  # В-7: неактивному ничего не назначается
     _commit_or_conflict(session, ApiError(409, "name_taken", "Подрядчик с таким именем уже есть"))
     return _contractor_out(session, contractor)
+
+
+def _zone_ewkt(session: Session, contractor_id: int) -> str | None:
+    return session.execute(
+        text("SELECT ST_AsEWKT(zone::geometry) FROM contractors WHERE id = :id"),
+        {"id": contractor_id},
+    ).scalar_one_or_none()
 
 
 def delete_contractor(session: Session, contractor_id: int) -> None:
