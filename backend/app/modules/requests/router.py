@@ -12,6 +12,7 @@ from app.deps import CitizenUser, ContractorStaff, DbSession, DispatcherUser, Pa
 from app.errors import ERROR_RESPONSES, not_implemented
 from app.modules.media.router import read_limited
 from app.modules.requests import service
+from app.modules.requests.filters import RequestFilter
 from app.modules.requests.schemas import (
     CitizenRequestOut,
     ClassChange,
@@ -82,7 +83,6 @@ def my_request(request_id: int, user: CitizenUser, session: DbSession) -> Citize
     summary="Список заявок с фильтрами",
 )
 def list_requests(
-    token: Token,
     paging: Paging,
     status_: Annotated[list[StatusCode] | None, Query(alias="status")] = None,
     district_id: int | None = None,
@@ -96,10 +96,26 @@ def list_requests(
     detected_from: datetime | None = None,
     detected_to: datetime | None = None,
     sort: Annotated[str, Query(pattern="^(priority|detected_at)$")] = "priority",
+    *,
+    user: DispatcherUser,
+    session: DbSession,
 ) -> Page[DispatcherRequestSummary]:
-    """sort=priority: класс → дубликаты → группа → дата подачи → плановая дата (REQ-045).
-    Слитые заявки не показываются (В-18)."""
-    not_implemented()
+    """sort=priority: класс → дубликаты → группа → дата подачи → плановая дата (REQ-045);
+    sort=detected_at — сначала новые. Слитые заявки не показываются (В-18)."""
+    f = RequestFilter.of(
+        status=status_,
+        district_id=district_id,
+        street_group=street_group,
+        defect_class=defect_class,
+        contractor_id=contractor_id,
+        needs_group=needs_group,
+        needs_contractor=needs_contractor,
+        duplicate=duplicate,
+        overdue=overdue,
+        detected_from=detected_from,
+        detected_to=detected_to,
+    )
+    return service.list_requests(session, f, paging, sort)
 
 
 @router.get(

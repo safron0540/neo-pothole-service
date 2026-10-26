@@ -30,6 +30,7 @@ from app.modules.media import service as media
 from app.modules.media.models import Photo
 from app.modules.media.service import photo_url
 from app.modules.notifications.models import Notification
+from app.modules.requests.filters import NEWEST_ORDER, PRIORITY_ORDER, RequestFilter, conditions
 from app.modules.requests.models import Request, RequestEvent
 from app.modules.requests.schemas import (
     Applicant,
@@ -38,6 +39,7 @@ from app.modules.requests.schemas import (
     ContractorAssign,
     ContractorRequestOut,
     DispatcherRequestOut,
+    DispatcherRequestSummary,
     EventOut,
     RequestCreate,
     RequestSummary,
@@ -390,6 +392,53 @@ def complete(
     return contractor_card(session, contractor_id, request_id)
 
 
+# --- Список заявок диспетчера ------------------------------------------------------------
+
+
+def list_requests(
+    session: Session, f: RequestFilter, paging: Pagination, sort: str
+) -> Page[DispatcherRequestSummary]:
+    """Список с фильтрами (REQ-050, 051); sort=priority — порядок REQ-045."""
+    now = datetime.now(UTC)
+    where = conditions(f, now)
+    total = session.scalar(select(func.count()).select_from(Request).where(*where))
+    order = PRIORITY_ORDER if sort == "priority" else NEWEST_ORDER
+    rows = session.execute(
+        select(Request, District.name, Contractor.name)
+        .outerjoin(District, District.id == Request.district_id)
+        .outerjoin(Contractor, Contractor.id == Request.contractor_id)
+        .where(*where)
+        .order_by(*order)
+        .limit(paging.limit)
+        .offset(paging.offset)
+    )
+    return Page(
+        items=[
+            DispatcherRequestSummary(**dispatcher_summary_fields(r, district, contractor, now))
+            for r, district, contractor in rows
+        ],
+        total=total,
+        limit=paging.limit,
+        offset=paging.offset,
+    )
+
+
+def dispatcher_summary_fields(
+    request: Request, district: str | None, contractor: str | None, now: datetime
+) -> dict:
+    return {
+        **summary_fields(request, now),
+        "street_group": request.street_group,
+        "district": Ref(id=request.district_id, name=district) if district else None,
+        "contractor": Ref(id=request.contractor_id, name=contractor) if contractor else None,
+        "duplicates_count": request.duplicates_count,
+        "duplicate_of_id": request.duplicate_of_id,
+        "needs_group": request.street_group is None,
+        "needs_contractor": request.contractor_id is None,
+        "version": request.version,
+    }
+
+
 # --- Карточка диспетчера -----------------------------------------------------------------
 
 
@@ -413,15 +462,15 @@ def dispatcher_card(session: Session, request_id: int) -> DispatcherRequestOut:
             .where(User.id == request.author_id)
         ).one()
         applicant = Applicant(first_name=user.first_name, last_name=user.last_name, phone=phone)
+    district = ref(session, District, request.district_id)
+    contractor = ref(session, Contractor, request.contractor_id)
     return DispatcherRequestOut(
-        **summary_fields(request, datetime.now(UTC)),
-        street_group=request.street_group,
-        district=ref(session, District, request.district_id),
-        contractor=ref(session, Contractor, request.contractor_id),
-        duplicates_count=request.duplicates_count,
-        duplicate_of_id=request.duplicate_of_id,
-        needs_group=request.street_group is None,
-        needs_contractor=request.contractor_id is None,
+        **dispatcher_summary_fields(
+            request,
+            district.name if district else None,
+            contractor.name if contractor else None,
+            datetime.now(UTC),
+        ),
         location=location_of(session, request.id),
         accuracy_m=request.accuracy_m,
         house_number=request.house_number,
@@ -439,7 +488,6 @@ def dispatcher_card(session: Session, request_id: int) -> DispatcherRequestOut:
         photo_before_url=photo_url(request.before_photo_id),
         photo_after_url=photo_url(after_photo_id(session, request)),
         applicant=applicant,
-        version=request.version,
     )
 
 

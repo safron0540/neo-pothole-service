@@ -890,7 +890,7 @@
           "dispatcher"
         ],
         "summary": "Список заявок с фильтрами",
-        "description": "sort=priority: класс → дубликаты → группа → дата подачи → плановая дата (REQ-045).\nСлитые заявки не показываются (В-18).",
+        "description": "sort=priority: класс → дубликаты → группа → дата подачи → плановая дата (REQ-045);\nsort=detected_at — сначала новые. Слитые заявки не показываются (В-18).",
         "operationId": "list_requests_api_v1_requests_get",
         "security": [
           {
