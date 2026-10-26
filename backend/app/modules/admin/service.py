@@ -1,4 +1,6 @@
-"""Справочники диспетчера: районы, группы улиц, улицы, подрядчики (REQ-064, 073, 074).
+"""Справочники и сотрудники: районы, группы улиц, улицы, подрядчики, пользователи.
+
+REQ-064, 073…075.
 
 Справочник, на который ссылаются заявки или улицы, не удаляется: 409 (UC-12 А2).
 Правка справочника не меняет уже поданные заявки: адрес, район и группа в них — снимок.
@@ -7,7 +9,7 @@
 
 import json
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -24,7 +26,12 @@ from app.modules.admin.schemas import (
     StreetIn,
     StreetOut,
     StreetUpdate,
+    UserCreate,
+    UserOut,
+    UserUpdate,
 )
+from app.modules.auth.models import ContractorUser, RefreshToken, User
+from app.modules.auth.security import hash_password
 from app.modules.geo.models import Contractor, District, Street, StreetGroup
 from app.schemas import Page
 
@@ -274,3 +281,134 @@ def delete_contractor(session: Session, contractor_id: int) -> None:
         raise not_found("Подрядчик")
     session.delete(contractor)
     _commit_or_conflict(session, in_use("Подрядчик", ": сделайте его неактивным"))
+
+
+# --- Сотрудники -----------------------------------------------------------------------
+
+STAFF_ROLES = ("dispatcher", "contractor")  # граждане регистрируются сами
+
+
+def _user_out(user: User, contractor_id: int | None) -> UserOut:
+    return UserOut(
+        id=user.id,
+        login=user.login,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        role=user.role,
+        is_active=user.is_active,
+        contractor_id=contractor_id,
+    )
+
+
+def _strong(password: str) -> str:
+    if not validators.is_strong_password(password):
+        raise ApiError(
+            422, "weak_password", "Пароль: не меньше 8 символов, заглавные и строчные буквы, цифры"
+        )
+    return password
+
+
+def _check_contractor(session: Session, contractor_id: int | None) -> int:
+    contractor = session.get(Contractor, contractor_id) if contractor_id else None
+    if contractor is None or not contractor.is_active:
+        raise ApiError(422, "contractor_required", "Укажите действующего подрядчика (UC-13)")
+    return contractor.id
+
+
+def _contractor_not_allowed() -> ApiError:
+    return ApiError(
+        422, "contractor_not_allowed", "Подрядчик указывается только для роли contractor"
+    )
+
+
+def list_users(
+    session: Session, paging: Pagination, role: str | None, is_active: bool | None
+) -> Page[UserOut]:
+    where = []
+    if role is not None:
+        where.append(User.role == role)
+    if is_active is not None:
+        where.append(User.is_active == is_active)
+    total = session.scalar(select(func.count()).select_from(User).where(*where))
+    rows = session.execute(
+        select(User, ContractorUser.contractor_id)
+        .outerjoin(ContractorUser, ContractorUser.user_id == User.id)
+        .where(*where)
+        .order_by(User.last_name, User.first_name, User.id)
+        .limit(paging.limit)
+        .offset(paging.offset)
+    )
+    return Page(
+        items=[_user_out(user, contractor_id) for user, contractor_id in rows],
+        total=total,
+        limit=paging.limit,
+        offset=paging.offset,
+    )
+
+
+def create_user(session: Session, body: UserCreate) -> UserOut:
+    """Сотрудник диспетчера или подрядчика (REQ-075); подрядчику нужна организация (В-8)."""
+    if body.role not in STAFF_ROLES:
+        raise ApiError(422, "staff_only", "Граждане регистрируются в мобильном приложении")
+    login = validators.normalize_login(body.login)
+    if session.scalar(select(User.id).where(User.login == login)) is not None:
+        raise ApiError(409, "login_taken", "Такой логин уже занят")
+    contractor_id = None
+    if body.role == "contractor":
+        contractor_id = _check_contractor(session, body.contractor_id)
+    elif body.contractor_id is not None:
+        raise _contractor_not_allowed()
+    user = User(
+        login=login,
+        first_name=body.first_name.strip(),
+        last_name=body.last_name.strip(),
+        role=body.role,
+        password_hash=hash_password(_strong(body.password)),
+    )
+    session.add(user)
+    session.flush()
+    if contractor_id is not None:
+        session.add(ContractorUser(user_id=user.id, contractor_id=contractor_id))
+    _commit_or_conflict(session, ApiError(409, "login_taken", "Такой логин уже занят"))
+    return _user_out(user, contractor_id)
+
+
+def _revoke_sessions(session: Session, user_id: int) -> None:
+    session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=func.now())
+    )
+
+
+def update_user(session: Session, user_id: int, body: UserUpdate) -> UserOut:
+    """Пользователей не удаляем, а отключаем; при отключении отзываются все сессии."""
+    user = session.get(User, user_id)
+    if user is None:
+        raise not_found("Пользователь")
+    link = session.get(ContractorUser, user_id)
+    changes = body.model_dump(include=body.model_fields_set)
+    if changes.get("first_name") is not None:
+        user.first_name = changes["first_name"].strip()
+    if changes.get("last_name") is not None:
+        user.last_name = changes["last_name"].strip()
+    if changes.get("contractor_id") is not None:
+        if link is None:
+            raise _contractor_not_allowed()
+        link.contractor_id = _check_contractor(session, changes["contractor_id"])
+    if changes.get("is_active") is not None:
+        user.is_active = changes["is_active"]
+        if not user.is_active:
+            _revoke_sessions(session, user.id)
+    session.commit()
+    return _user_out(user, link.contractor_id if link else None)
+
+
+def reset_password(session: Session, user_id: int, password: str) -> None:
+    """Новый пароль от диспетчера (UC-13); старые сессии сотрудника отзываются."""
+    user = session.get(User, user_id)
+    if user is None or user.role not in STAFF_ROLES:
+        raise not_found("Сотрудник")
+    user.password_hash = hash_password(_strong(password))
+    _revoke_sessions(session, user.id)
+    session.commit()

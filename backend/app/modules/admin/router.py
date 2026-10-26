@@ -1,12 +1,12 @@
-"""Справочники и сотрудники (диспетчер). Сотрудники — PR 4-3.
+"""Справочники и сотрудники (диспетчер).
 
 Справочник, на который ссылаются заявки, не удаляется: 409 (UC-12 А2).
 """
 
 from fastapi import APIRouter, status
 
-from app.deps import DbSession, DispatcherUser, Paging, Token
-from app.errors import ERROR_RESPONSES, not_implemented
+from app.deps import DbSession, DispatcherUser, Paging
+from app.errors import ERROR_RESPONSES
 from app.modules.admin import service
 from app.modules.admin.schemas import (
     ContractorIn,
@@ -169,9 +169,13 @@ def delete_contractor(contractor_id: int, user: DispatcherUser, session: DbSessi
 
 @router.get("/users", response_model=Page[UserOut], summary="Пользователи")
 def list_users(
-    token: Token, paging: Paging, role: Role | None = None, is_active: bool | None = None
+    user: DispatcherUser,
+    session: DbSession,
+    paging: Paging,
+    role: Role | None = None,
+    is_active: bool | None = None,
 ) -> Page[UserOut]:
-    not_implemented()
+    return service.list_users(session, paging, role, is_active)
 
 
 @router.post(
@@ -180,14 +184,17 @@ def list_users(
     status_code=status.HTTP_201_CREATED,
     summary="Добавить сотрудника",
 )
-def create_user(body: UserCreate, token: Token) -> UserOut:
-    not_implemented()
+def create_user(body: UserCreate, user: DispatcherUser, session: DbSession) -> UserOut:
+    """Только диспетчер или подрядчик; подрядчику обязателен contractor_id. 409 — логин занят."""
+    return service.create_user(session, body)
 
 
 @router.patch("/users/{user_id}", response_model=UserOut, summary="Изменить или отключить")
-def update_user(user_id: int, body: UserUpdate, token: Token) -> UserOut:
+def update_user(
+    user_id: int, body: UserUpdate, user: DispatcherUser, session: DbSession
+) -> UserOut:
     """При отключении отзываются все refresh-токены пользователя."""
-    not_implemented()
+    return service.update_user(session, user_id, body)
 
 
 @router.post(
@@ -195,5 +202,8 @@ def update_user(user_id: int, body: UserUpdate, token: Token) -> UserOut:
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Новый пароль сотрудника",
 )
-def reset_password(user_id: int, body: PasswordReset, token: Token) -> None:
-    not_implemented()
+def reset_password(
+    user_id: int, body: PasswordReset, user: DispatcherUser, session: DbSession
+) -> None:
+    """Старые сессии сотрудника отзываются."""
+    service.reset_password(session, user_id, body.password)
