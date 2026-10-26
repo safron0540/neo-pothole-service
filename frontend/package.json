@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "mock": "npx @stoplight/prism-cli mock openapi.yaml -p 4010"
+    "mock": "npx @stoplight/prism-cli mock -d ../docs/openapi.json -p 4010",
+    "gen:types": "npx openapi-typescript ../docs/openapi.json -o src/api/schema.d.ts"
   },
   "dependencies": {
     "@types/leaflet": "^1.9.22",

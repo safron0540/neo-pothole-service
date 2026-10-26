@@ -1,113 +1,144 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Camera, ImageOff, Check, ArrowRight, ArrowLeft, MapPin, Loader2 } from 'lucide-react';
-import { Pagination } from "../../components/Pagination"; 
+import { Camera, ImageOff, Check, ArrowRight, ArrowLeft, MapPin, Loader2, Clock, User, ChevronRight } from 'lucide-react';
+import { Pagination } from "../../components/Pagination";
 import logoSvg from "../../assets/logo.svg";
 import { api } from "../../api";
-import { TomskClock } from "../../components/TomskClock";
-import { formatDate } from "../../utils/format";
+import type { ContractorRequestOut, RequestSummary } from "../../api";
+import { useMe, shortName } from "../../data/useMe";
+import { STATUS_COLOR } from "../../data/reference";
+import { DEFECT_CLASS_LABEL } from "../../data/reference";
+import { formatDateTime, formatDayTime, formatDeadlineShort, formatDueLabel, remainingDetailed } from "../../utils/format";
 
-interface ContractorTask {
-  id: number | string;
-  address: string;
-  full_address?: string;
-  defect_class?: string;
-  status: string;
-  planned_due?: string;
-  hours_left?: number;
-  is_overdue?: boolean;
+type Notice = { type: 'ok' | 'error'; text: string } | null;
+
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // до 10 МБ
+const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png'];
+
+function StatusPill({ code, label }: { code: RequestSummary['status']['code']; label: string }) {
+  return (
+    <span
+      className={`inline-flex h-5 w-[130px] items-center justify-center rounded-xl text-[11px] font-light ${
+        code === 'in_progress' ? 'text-neutral-800' : 'text-white'
+      }`}
+      style={{ backgroundColor: STATUS_COLOR[code] }}
+    >
+      {label}
+    </span>
+  );
 }
 
-const FALLBACK_TASKS: ContractorTask[] = [
-  {
-    id: 20092026,
-    address: 'ул. Ленина, 15',
-    full_address: 'г. Томск, ул. Ленина, 15',
-    defect_class: 'big',
-    status: 'В работе',
-    planned_due: '2026-10-20T14:00:00Z',
-    hours_left: 24,
-    is_overdue: false,
-  },
-  {
-    id: 20090899,
-    address: 'ул. Вершинина, 24',
-    full_address: 'г. Томск, ул. Вершинина, 24',
-    defect_class: 'big',
-    status: 'В работе',
-    planned_due: '2026-10-18T12:00:00Z',
-    hours_left: -26,
-    is_overdue: true,
-  },
-];
-
 export default function ContractorPage({ onLogout }: { onLogout?: () => void }) {
-  const [tasks, setTasks] = useState<ContractorTask[]>(FALLBACK_TASKS);
-  const [selectedTask, setSelectedTask] = useState<ContractorTask | null>(null);
+  const me = useMe();
+  const [tasks, setTasks] = useState<RequestSummary[]>([]);
+  const [selectedTask, setSelectedTask] = useState<RequestSummary | null>(null);
+  const [taskDetail, setTaskDetail] = useState<ContractorRequestOut | null>(null);
   const [activeFilter, setActiveFilter] = useState<'all' | 'in_work' | 'overdue' | 'done'>('all');
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 4;
+  const [reloadTick, setReloadTick] = useState(0);
+  const PAGE_SIZE = 5; // как в макете: «Показано 5 из 14 заявок»
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [afterPhotoPreview, setAfterPhotoPreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [notice, setNotice] = useState<Notice>(null);
+  const [listState, setListState] = useState<{ tick: number; error?: string } | null>(null);
+  const isLoading = listState?.tick !== reloadTick;
 
-  // Загрузка нарядов подрядчика с сервера (Q-18)
+  // Название организации под заголовком (если справочник доступен этой роли)
+  const [orgName, setOrgName] = useState<string | null>(null);
+  const contractorId = me?.contractor_id ?? null;
   useEffect(() => {
-    setIsLoading(true);
-    api.getContractorRequests()
-      .then((data) => {
-        if (data.items && data.items.length > 0) {
-          setTasks(data.items);
-        }
-      })
+    if (contractorId == null) return;
+    let cancelled = false;
+    api
+      .getContractors()
+      .then((list) => !cancelled && setOrgName(list.find((c) => c.id === contractorId)?.name ?? null))
       .catch(() => {
-        console.log('Используются резервные наряды подрядчика');
-      })
-      .finally(() => setIsLoading(false));
-  }, []);
+        /* без названия организации — не критично */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [contractorId]);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedFile(file);
-      setAfterPhotoPreview(URL.createObjectURL(file));
-    }
+  // Наряды подрядчика (чужих бэкенд не отдаёт)
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getContractorRequests({ limit: 200 })
+      .then((data) => {
+        if (cancelled) return;
+        setTasks(data.items);
+        setListState({ tick: reloadTick });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setListState({ tick: reloadTick, error: err instanceof Error ? err.message : 'Ошибка' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadTick]);
+
+  // Открыть наряд: подгружаем карточку (фото до/после, координаты)
+  const openTask = (task: RequestSummary) => {
+    setSelectedTask(task);
+    setTaskDetail(null);
+    setNotice(null);
+    api
+      .getContractorRequestById(task.id)
+      .then((d) => setTaskDetail((prev) => (prev === null ? d : prev)))
+      .catch(() => {
+        /* работаем с данными из списка */
+      });
   };
 
-  // Завершение наряда с отправкой фото на сервер (Q-19)
-  const handleCompleteTask = async () => {
-    if (!afterPhotoPreview || !selectedTask) return;
-
-    setIsSubmitting(true);
-    if (selectedFile) {
-      try {
-        await api.completeContractorRequest(selectedTask.id, selectedFile);
-      } catch (err: any) {
-        console.warn('Сервер недоступен, перевод в оффлайн-режиме:', err.message);
-      }
-    }
-
-    setTasks((prev) =>
-      prev.map((item) =>
-        item.id === selectedTask.id
-          ? { ...item, status: 'Выполнено', is_overdue: false }
-          : item
-      )
-    );
-
-    alert(`Наряд №${selectedTask.id} успешно закрыт со статусом «Выполнено»!`);
-    setIsSubmitting(false);
+  const closeTask = () => {
     setSelectedTask(null);
+    setTaskDetail(null);
     setAfterPhotoPreview(null);
     setSelectedFile(null);
   };
 
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+      setNotice({ type: 'error', text: 'Фото должно быть в формате JPEG или PNG.' });
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      setNotice({ type: 'error', text: 'Фото слишком большое: максимум 10 МБ.' });
+      return;
+    }
+    setNotice(null);
+    setSelectedFile(file);
+    setAfterPhotoPreview(URL.createObjectURL(file));
+  };
+
+  // Завершение наряда: фото уходит в поле «image», version не нужен
+  const handleCompleteTask = async () => {
+    if (!selectedFile || !selectedTask) return;
+
+    setIsSubmitting(true);
+    setNotice(null);
+    try {
+      await api.completeContractorRequest(selectedTask.id, selectedFile);
+      setNotice({ type: 'ok', text: `Наряд № ${selectedTask.id} закрыт со статусом «Выполнено».` });
+      closeTask();
+      setReloadTick((t) => t + 1);
+    } catch (err) {
+      // message от бэкенда: размер/формат фото (422, 413) и т.п.
+      setNotice({ type: 'error', text: err instanceof Error ? err.message : 'Ошибка завершения наряда' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
-      if (activeFilter === 'in_work') return t.status === 'В работе' || t.status === 'Принято';
+      if (activeFilter === 'in_work') return t.status.code === 'in_progress';
       if (activeFilter === 'overdue') return t.is_overdue;
-      if (activeFilter === 'done') return t.status === 'Выполнено';
+      if (activeFilter === 'done') return t.status.code === 'done';
       return true;
     });
   }, [tasks, activeFilter]);
@@ -117,236 +148,352 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
     return filteredTasks.slice(start, start + PAGE_SIZE);
   }, [filteredTasks, page]);
 
-  return (
-    <div className="min-h-screen w-full bg-neutral-100 font-sans text-neutral-800 antialiased flex flex-col">
-      <header className="h-20 bg-white border-b border-neutral-200 px-8 flex items-center justify-between shrink-0 shadow-sm">
-        <div className="flex items-center gap-3">
-          <img 
-            src={logoSvg} 
-            alt="NEO-СЕРВИС" 
-            className="w-9 h-10 shrink-0 object-contain drop-shadow-sm" 
-          />
-          <div className="text-xs font-bold uppercase leading-tight tracking-wide">
-            NEO-СЕРВИС:<br />ЯМОЧНЫЙ РЕМОНТ
+  const counts = useMemo(
+    () => ({
+      all: tasks.length,
+      in_work: tasks.filter((t) => t.status.code === 'in_progress').length,
+      overdue: tasks.filter((t) => t.is_overdue).length,
+      done: tasks.filter((t) => t.status.code === 'done').length,
+    }),
+    [tasks]
+  );
+
+  const TABS = [
+    { id: 'all' as const, label: 'Все заявки', count: counts.all },
+    { id: 'in_work' as const, label: 'В работе', count: counts.in_work },
+    { id: 'overdue' as const, label: 'Просроченные', count: counts.overdue },
+    { id: 'done' as const, label: 'Выполнено', count: counts.done },
+  ];
+
+  const badgeFor = (t: RequestSummary): { label: string; cls: string } => {
+    if (t.is_overdue) return { label: 'Просрочен', cls: 'bg-[#FFDAD6] text-red-700' };
+    if (t.status.code !== 'done' && remainingDetailed(t.planned_due_at).urgent) {
+      return { label: 'Срочно', cls: 'bg-[#FFDBD0] text-[#7F2B0D]' };
+    }
+    return { label: 'В плане', cls: 'bg-neutral-100 text-neutral-600' };
+  };
+
+
+  // Шапка из макета «Веб/Подрядчики_Главный»: 64 px, полупрозрачная, имя справа с вертикальной чертой
+  const header = (
+    <header className="shrink-0 border-b border-neutral-200 bg-white py-[7px]">
+      <div className="flex h-16 items-center justify-between bg-[rgba(250,248,255,0.8)] px-6 shadow-[0_1px_8px_rgba(0,0,0,0.04)] backdrop-blur-[12px]">
+        <div className="flex items-center gap-[5px]">
+          <img src={logoSvg} alt="NEO-СЕРВИС" className="h-9 w-[27px] shrink-0 object-contain" />
+          <div className="text-xs font-light leading-normal text-black">
+            NEO-СЕРВИС:
+            <br />
+            ЯМОЧНЫЙ РЕМОНТ
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <TomskClock />
-          <div className="text-right">
-            <div className="text-sm font-bold text-neutral-900">Воронов А. С.</div>
-            <div className="text-xs text-neutral-400">Мастер участка • Подрядчик</div>
+        <div className="flex h-9 items-center gap-3 border-l border-[#DAE2FD] pl-[21px]">
+          <div className="text-right leading-tight">
+            <div className="text-sm font-bold text-[#131B2E]">{shortName(me)}</div>
+            <div className="text-xs text-neutral-800">Мастер участка. Подрядчик</div>
           </div>
-          <div className="w-10 h-10 rounded-full bg-red-700 text-white flex items-center justify-center font-bold text-sm shadow-sm">
-            В
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-700 text-white">
+            <User className="h-3 w-3" />
           </div>
           <button
             onClick={onLogout}
-            className="text-xs font-semibold text-neutral-400 hover:text-red-700 ml-2 cursor-pointer transition-colors"
+            className="ml-1 text-xs text-neutral-600 hover:text-red-700 cursor-pointer transition-colors"
           >
-            Выход ↗
+            Выход
           </button>
         </div>
-      </header>
+      </div>
+    </header>
+  );
 
-      <main className="flex-1 p-8 overflow-y-auto">
-        <div className="max-w-6xl mx-auto">
-          {!selectedTask ? (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-2xl font-bold text-neutral-900 leading-tight">Мои наряды на ремонт</h1>
-                  <p className="text-xs text-neutral-400 mt-0.5">ООО «ДорСтрой-Лидер»</p>
-                </div>
-                {isLoading && <Loader2 className="w-4 h-4 animate-spin text-red-700" />}
+  // ---------------- Открытая заявка («Веб/Подрядчики_Открытая заявка») ----------------
+  if (selectedTask) {
+    const due = remainingDetailed(selectedTask.planned_due_at);
+    const isDone = selectedTask.status.code === 'done';
+    const beforeUrl = taskDetail?.photo_before_url ?? null;
+    const afterUrl = afterPhotoPreview ?? taskDetail?.photo_after_url ?? null;
+
+    return (
+      <div className="min-h-screen w-full bg-white text-neutral-800 antialiased flex flex-col">
+        {header}
+        <main className="flex-1 overflow-y-auto bg-neutral-100 px-8 pb-8 pt-6">
+          <div className="mx-auto flex max-w-[1302px] flex-col gap-6">
+            <div className="flex h-16 items-center justify-between rounded-xl bg-white px-4 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={closeTask}
+                  className="flex items-center gap-2 text-sm font-normal text-neutral-800 hover:text-red-700 cursor-pointer"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  <span>Назад к списку заявок</span>
+                </button>
+                <span className="h-6 w-px bg-neutral-200" />
+                <span className="text-sm text-neutral-800">ID {selectedTask.id}</span>
+                <StatusPill code={selectedTask.status.code} label={selectedTask.status.label} />
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => { setActiveFilter('all'); setPage(1); }}
-                  className={`px-4 py-2 rounded-2xl text-xs font-bold cursor-pointer transition-all ${
-                    activeFilter === 'all' ? 'bg-white shadow-sm border border-neutral-300 text-neutral-900' : 'bg-neutral-200/60 text-neutral-500'
-                  }`}
-                >
-                  Все ({tasks.length})
-                </button>
-                <button
-                  onClick={() => { setActiveFilter('in_work'); setPage(1); }}
-                  className={`px-4 py-2 rounded-2xl text-xs font-bold cursor-pointer transition-all ${
-                    activeFilter === 'in_work' ? 'bg-white shadow-sm border border-neutral-300 text-neutral-900' : 'bg-neutral-200/60 text-neutral-500'
-                  }`}
-                >
-                  В работе
-                </button>
-                <button
-                  onClick={() => { setActiveFilter('overdue'); setPage(1); }}
-                  className={`px-4 py-2 rounded-2xl text-xs font-bold cursor-pointer transition-all ${
-                    activeFilter === 'overdue' ? 'bg-white shadow-sm border border-red-300 text-red-700' : 'bg-neutral-200/60 text-red-600'
-                  }`}
-                >
-                  Просроченные
-                </button>
-                <button
-                  onClick={() => { setActiveFilter('done'); setPage(1); }}
-                  className={`px-4 py-2 rounded-2xl text-xs font-bold cursor-pointer transition-all ${
-                    activeFilter === 'done' ? 'bg-white shadow-sm border border-neutral-300 text-neutral-900' : 'bg-neutral-200/60 text-neutral-500'
-                  }`}
-                >
-                  Выполнено
-                </button>
-              </div>
-
-              <div className="bg-white rounded-3xl border border-neutral-200/80 shadow-sm overflow-hidden p-6">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-neutral-100 text-neutral-400 uppercase font-semibold text-[10px] tracking-wider pb-3">
-                        <th className="py-2.5 px-3">Номер наряда</th>
-                        <th className="py-2.5 px-3">Адрес дефекта</th>
-                        <th className="py-2.5 px-3">Класс ямы</th>
-                        <th className="py-2.5 px-3">Срок устранения</th>
-                        <th className="py-2.5 px-3">Статус</th>
-                        <th className="py-2.5 px-3 text-right">Действие</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100">
-                      {pagedTasks.map((t) => (
-                        <tr key={t.id} className="hover:bg-neutral-50/70 transition-colors">
-                          <td className="py-4 px-3 font-bold text-neutral-900">№ {t.id}</td>
-                          <td className="py-4 px-3 font-semibold text-neutral-900">{t.address}</td>
-                          <td className="py-4 px-3">{t.defect_class === 'big' ? 'Большая' : 'Маленькая'} яма</td>
-                          <td className="py-4 px-3">
-                            <span className={t.is_overdue ? 'text-red-600 font-bold' : 'text-neutral-600'}>
-                              {t.planned_due ? formatDate(t.planned_due) : 'В плане'}
-                            </span>
-                          </td>
-                          <td className="py-4 px-3">
-                            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
-                              t.status === 'Выполнено' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                            }`}>
-                              {t.status}
-                            </span>
-                          </td>
-                          <td className="py-4 px-3 text-right">
-                            <button
-                              onClick={() => setSelectedTask(t)}
-                              className="text-red-700 hover:text-red-800 font-bold text-xs inline-flex items-center gap-1 cursor-pointer"
-                            >
-                              <span>Открыть</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <Pagination
-                  currentPage={page}
-                  totalItems={filteredTasks.length}
-                  pageSize={PAGE_SIZE}
-                  onPageChange={setPage}
-                  itemLabel="нарядов"
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              <div className="bg-white rounded-2xl border border-neutral-200/80 p-4 shadow-sm flex items-center justify-between">
-                <button
-                  onClick={() => { setSelectedTask(null); setAfterPhotoPreview(null); }}
-                  className="text-xs font-bold text-neutral-600 hover:text-neutral-900 flex items-center gap-1.5 cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Назад к списку нарядов</span>
-                </button>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-neutral-500">Наряд № {selectedTask.id}</span>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                    selectedTask.status === 'Выполнено' ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-neutral-900'
-                  }`}>
-                    {selectedTask.status}
+              {!isDone && selectedTask.planned_due_at && (
+                <div className="flex h-8 items-center gap-2 rounded-lg bg-neutral-100 px-3 text-xs text-red-700">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>
+                    Срок : {formatDeadlineShort(selectedTask.planned_due_at)} ({due.label.toLowerCase()})
                   </span>
                 </div>
-              </div>
+              )}
+            </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                <div className="space-y-6">
-                  <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm space-y-4">
-                    <h2 className="text-base font-bold text-neutral-900">Параметры дефекта</h2>
-                    <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-100">
-                      <div className="flex items-start gap-2 text-xs">
-                        <MapPin className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                        <div>
-                          <div className="font-bold text-neutral-900">{selectedTask.address}</div>
-                          <div className="text-[11px] text-neutral-400 mt-0.5">{selectedTask.full_address || selectedTask.address}</div>
+            <div className="grid grid-cols-2 items-start gap-6">
+              <div className="flex flex-col gap-6">
+                <section className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                  <div className="flex items-start justify-between">
+                    <h2 className="text-lg font-bold text-neutral-800">Параметры дефекта</h2>
+                    {taskDetail?.street_group && (
+                      <span className="rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold uppercase text-neutral-800">
+                        Категория {taskDetail.street_group}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-4 rounded-xl bg-neutral-100 p-4">
+                    <div className="flex items-start gap-2">
+                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+                      <div>
+                        <div className="text-sm font-bold text-neutral-800">
+                          {selectedTask.address ? `г. Томск, ${selectedTask.address}` : 'Адрес не определён'}
                         </div>
+                        {taskDetail?.location && (
+                          <div className="mt-0.5 text-xs font-light text-neutral-600">
+                            GPS: {taskDetail.location.lat.toFixed(4)}° N, {taskDetail.location.lon.toFixed(4)}° E
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-neutral-900">Фотофиксация осмотра</h3>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 text-red-700">ДО РЕМОНТА</span>
-                    </div>
-
-                    <div className="relative w-full h-56 rounded-2xl bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-400">
-                      <ImageOff className="w-12 h-12 text-neutral-300" />
-                      <div className="absolute bottom-2 left-3 text-[11px] text-neutral-500 bg-white/80 px-2 py-1 rounded">
-                        Фото из первичной заявки
-                      </div>
-                    </div>
+                  <div className="mt-4 inline-block min-w-[220px] rounded-xl bg-neutral-100 p-3">
+                    <div className="text-[11px] font-bold uppercase text-neutral-600">Класс ямы</div>
+                    <div className="mt-1 text-sm font-bold text-red-700">{DEFECT_CLASS_LABEL[selectedTask.defect_class]} яма</div>
                   </div>
-                </div>
+                </section>
 
-                <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm space-y-4">
-                  <h2 className="text-base font-bold text-neutral-900">Сдача работ (Фотоконтроль)</h2>
-
-                  <div className="relative w-full h-72 rounded-2xl bg-neutral-100 border border-neutral-200 flex flex-col items-center justify-center text-neutral-400 overflow-hidden">
-                    <span className="absolute top-3 left-3 z-10 text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-700">
-                      ПОСЛЕ ремонта
-                    </span>
-
-                    {afterPhotoPreview ? (
-                      <img src={afterPhotoPreview} alt="После ремонта" className="w-full h-full object-cover" />
+                <section className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-neutral-800">Фотофиксация осмотра</h3>
+                    <span className="rounded bg-[#FFDAD6] px-2 py-1 text-[11px] font-bold uppercase text-red-700">До ремонта</span>
+                  </div>
+                  {/* Ссылки на фото подписаны и живут 15 минут — не кэшируем */}
+                  <div className="relative mt-4 h-[320px] overflow-hidden rounded-xl bg-neutral-100">
+                    {beforeUrl ? (
+                      <img src={beforeUrl} alt="До ремонта" className="h-full w-full object-cover" />
                     ) : (
-                      <div className="flex flex-col items-center">
-                        <ImageOff className="w-12 h-12 text-neutral-300 mb-2" />
-                        <span className="text-xs text-neutral-400">Фотография ещё не загружена</span>
+                      <div className="flex h-full items-center justify-center text-neutral-400">
+                        <ImageOff className="h-12 w-12" />
                       </div>
                     )}
+                    <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-black/50 to-transparent px-4 pb-3 pt-8 text-xs text-white/90">
+                      <Clock className="h-3 w-3" />
+                      {formatDateTime(selectedTask.detected_at)}
+                    </div>
                   </div>
-
-                  <label className="w-full h-11 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors border border-neutral-200">
-                    <Camera className="w-4 h-4" />
-                    <span>{afterPhotoPreview ? 'Заменить фото' : 'Загрузить фото с камеры'}</span>
-                    <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-                  </label>
-
-                  <button
-                    onClick={handleCompleteTask}
-                    disabled={!afterPhotoPreview || isSubmitting}
-                    className={`w-full py-3.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition-all ${
-                      afterPhotoPreview && !isSubmitting
-                        ? 'bg-red-700 hover:bg-red-800 text-white cursor-pointer'
-                        : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
-                    }`}
-                  >
-                    {isSubmitting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4" />
-                        <span>Подтвердить статус «Выполнено» (Q-19)</span>
-                      </>
-                    )}
-                  </button>
-                </div>
+                </section>
               </div>
+
+              <section className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                <h2 className="text-lg font-bold text-neutral-800">Сдача работ</h2>
+                <p className="mt-1 text-xs font-light text-neutral-600">Фотофиксация выполнения и подтверждение закрытия</p>
+
+                <div className="relative mt-4 h-[320px] overflow-hidden rounded-xl bg-neutral-100">
+                  <span className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-neutral-800 shadow-sm">
+                    <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
+                    ПОСЛЕ ремонта
+                  </span>
+                  {afterUrl ? (
+                    <img src={afterUrl} alt="После ремонта" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center text-neutral-400">
+                      <ImageOff className="mb-2 h-12 w-12" />
+                      <span className="text-xs font-light">Фотография ещё не загружена</span>
+                    </div>
+                  )}
+                </div>
+
+                {notice?.type === 'error' && <div className="mt-3 text-xs text-red-700">{notice.text}</div>}
+
+                {!isDone && (
+                  <>
+                    <label className="mt-2 flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-neutral-100 text-sm font-bold text-neutral-800 transition-colors hover:bg-neutral-200">
+                      <Camera className="h-4 w-4" />
+                      <span>{afterPhotoPreview ? 'Заменить фото' : 'Загрузить фото'}</span>
+                      <input type="file" accept="image/jpeg,image/png" onChange={handlePhotoUpload} className="hidden" />
+                    </label>
+
+                    <button
+                      onClick={handleCompleteTask}
+                      disabled={!selectedFile || isSubmitting}
+                      className={`mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold transition-colors ${
+                        selectedFile && !isSubmitting
+                          ? 'cursor-pointer bg-red-700 text-white hover:bg-red-800'
+                          : 'cursor-not-allowed bg-neutral-200 text-neutral-400'
+                      }`}
+                    >
+                      {isSubmitting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4" />
+                          <span>Подтвердить статус «Выполнено»</span>
+                        </>
+                      )}
+                    </button>
+                  </>
+                )}
+              </section>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // ---------------- Список («Веб/Подрядчики_Главный») ----------------
+  return (
+    <div className="min-h-screen w-full bg-white text-neutral-800 antialiased flex flex-col">
+      {header}
+      <main className="flex-1 overflow-y-auto px-4 pb-6 pt-[14px]">
+        <div className="mx-auto flex max-w-[1334px] flex-col gap-4">
+          <div className="flex items-center justify-between pb-1">
+            <div className="flex flex-col gap-0.5">
+              <h1 className="text-2xl font-bold leading-tight text-neutral-800">Мои заявки</h1>
+              {orgName && <p className="text-sm text-neutral-600">{orgName}</p>}
+            </div>
+            {isLoading && <Loader2 className="h-4 w-4 animate-spin text-red-700" />}
+          </div>
+
+          {(notice || listState?.error) && (
+            <div
+              role="status"
+              className={`rounded-xl border px-4 py-2.5 text-xs ${
+                notice?.type === 'ok'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : 'border-red-200 bg-red-50 text-red-800'
+              }`}
+            >
+              {notice?.text ?? `Не удалось загрузить наряды: ${listState?.error}`}
             </div>
           )}
+
+          <div className="rounded-xl bg-white p-4 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+            <div className="flex items-center gap-1 pb-1">
+              {TABS.map((tab) => {
+                const active = activeFilter === tab.id;
+                const isOverdueTab = tab.id === 'overdue';
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setActiveFilter(tab.id);
+                      setPage(1);
+                    }}
+                    className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm cursor-pointer transition-colors ${
+                      active ? 'bg-neutral-100 font-bold text-neutral-800' : 'font-normal'
+                    } ${isOverdueTab ? 'text-[#BA1A1A]' : active ? '' : 'text-neutral-600'}`}
+                  >
+                    {isOverdueTab && <span className="h-1.5 w-1.5 rounded-full bg-[#BA1A1A]" />}
+                    <span>{tab.label}</span>
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-[14px] ${
+                        isOverdueTab
+                          ? 'bg-[#FFDAD6] text-red-700'
+                          : active
+                          ? 'bg-[#DAE2FD] text-neutral-800'
+                          : 'bg-neutral-100 text-neutral-600'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+            <div className="grid grid-cols-[286px_1fr_1fr_253px_1fr] items-center bg-neutral-100 px-[11px] py-2 text-[11px] font-bold uppercase tracking-[0.55px] text-neutral-600">
+              <div>ID/ статус</div>
+              <div>Адрес дефекта</div>
+              <div>Плановый срок</div>
+              <div className="text-center">Статус заявки</div>
+              <div className="text-right">Действие</div>
+            </div>
+
+            {pagedTasks.map((t) => {
+              const badge = badgeFor(t);
+              const rem = remainingDetailed(t.planned_due_at);
+              const hot = t.is_overdue || rem.urgent;
+              return (
+                <div
+                  key={t.id}
+                  className={`grid grid-cols-[286px_1fr_1fr_253px_1fr] items-start px-6 py-4 transition-colors hover:bg-neutral-100/60 ${
+                    !t.is_overdue && rem.urgent ? 'bg-[rgba(242,243,255,0.4)]' : ''
+                  }`}
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm text-neutral-800">№ ЗЯ-{t.id}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold leading-[14px] ${badge.cls}`}>{badge.label}</span>
+                    </div>
+                    <span className="text-xs text-neutral-600">{formatDayTime(t.detected_at)}</span>
+                  </div>
+
+                  <div className="flex min-w-0 flex-col pr-4">
+                    <span className="truncate text-sm font-bold leading-5 text-neutral-800">{t.address ?? '—'}</span>
+                    <span className="text-xs text-neutral-600">{DEFECT_CLASS_LABEL[t.defect_class]} яма</span>
+                  </div>
+
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs text-neutral-600">{formatDueLabel(t.planned_due_at)}</span>
+                    {t.status.code !== 'done' && (
+                      <span
+                        className={`text-xs ${hot ? 'font-bold' : 'font-normal text-neutral-600'}`}
+                        style={hot ? { color: t.is_overdue ? '#BA1A1A' : '#9E4123' } : undefined}
+                      >
+                        {rem.label}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex justify-center">
+                    <StatusPill code={t.status.code} label={t.status.label} />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => openTask(t)}
+                      className={`inline-flex h-4 items-center gap-1 text-xs cursor-pointer ${
+                        hot ? 'text-red-700' : 'text-neutral-600'
+                      }`}
+                    >
+                      <span>Открыть</span>
+                      {hot ? <ArrowRight className="h-[11px] w-[11px]" /> : <ChevronRight className="h-3 w-3" />}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {!isLoading && filteredTasks.length === 0 && (
+              <div className="py-12 text-center text-xs font-light text-neutral-500">Нарядов нет</div>
+            )}
+
+            <Pagination
+              variant="footer"
+              currentPage={page}
+              totalItems={filteredTasks.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+              itemLabel="заявок"
+            />
+          </div>
         </div>
       </main>
     </div>

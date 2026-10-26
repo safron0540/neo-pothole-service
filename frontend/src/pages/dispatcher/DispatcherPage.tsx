@@ -1,39 +1,48 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { Camera, ShieldCheck, Loader2, MapPin, History, ImageOff } from 'lucide-react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { Camera, ShieldCheck, Loader2, History, ImageOff, ChevronDown, MousePointerClick } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
 import { api, ApiError } from '../../api';
-import {
-  CONTRACTORS,
-  DEFECT_CLASS_LABEL,
-  DEMO_REQUESTS,
-  STREET_GROUPS,
-  contractorName,
-  type DefectClass,
-  type RequestItem,
-  type RequestStatus,
-  type StreetGroup,
-} from '../../data/reference';
-import { formatDateTime, formatTime, remainingInfo } from '../../utils/format';
+import type {
+  DefectClass,
+  DispatcherRequestOut,
+  DispatcherRequestSummary,
+  RejectReason,
+  EventOut,
+  EventType,
+  StatusCode,
+  StreetGroupCode,
+} from '../../api';
+import { DEFECT_CLASS_LABEL, REJECT_REASON_LABEL, STATUS_COLOR, statusLabel } from '../../data/reference';
+import { useReference } from '../../data/useReference';
+import { formatDateTime, formatTime, remainingChip, remainingInfo } from '../../utils/format';
 
-const QUEUE_STATUS: RequestStatus = 'На проверке';
 const PAGE_SIZE = 4;
 
-type SortBy = 'priority' | 'date';
+type SortBy = 'priority' | 'detected_at';
 type Notice = { type: 'ok' | 'error' | 'info'; text: string } | null;
+type Decision = Extract<StatusCode, 'accepted' | 'needs_clarification' | 'rejected'>;
 
-// Порядок приоритета (REQ-ЯР-045): класс → группа улицы → плановая дата → дата подачи
-function sortRequests(items: RequestItem[], sortBy: SortBy): RequestItem[] {
-  const copy = [...items];
-  if (sortBy === 'date') {
-    return copy.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+const errorText = (err: unknown) => (err instanceof Error ? err.message : 'Неизвестная ошибка');
+
+const EVENT_LABEL: Record<EventType, string> = {
+  created: 'Заявка создана',
+  processed: 'Обработана системой',
+  status_changed: 'Смена статуса',
+  class_changed: 'Изменён класс ямы',
+  group_changed: 'Изменена группа улицы',
+  contractor_changed: 'Назначен подрядчик',
+  merged: 'Слита с основной заявкой',
+  duplicate_flag_removed: 'Снята пометка «дубликат»',
+  note_added: 'Добавлена заметка',
+};
+
+function describeEvent(e: EventOut): string {
+  if (e.type === 'status_changed') {
+    const from = typeof e.payload.from === 'string' ? statusLabel(e.payload.from) : null;
+    const to = typeof e.payload.to === 'string' ? statusLabel(e.payload.to) : '';
+    return from ? `${from} → ${to}` : to || EVENT_LABEL.status_changed;
   }
-  return copy.sort((a, b) => {
-    if (a.defect_class !== b.defect_class) return a.defect_class === 'big' ? -1 : 1;
-    if (a.street_group !== b.street_group) return a.street_group.localeCompare(b.street_group, 'ru');
-    const due = (a.planned_due ?? '').localeCompare(b.planned_due ?? '');
-    if (due !== 0) return due;
-    return (b.created_at ?? '').localeCompare(a.created_at ?? '');
-  });
+  return EVENT_LABEL[e.type] ?? e.type;
 }
 
 interface DispatcherPageProps {
@@ -42,252 +51,190 @@ interface DispatcherPageProps {
 }
 
 export default function DispatcherPage({ focusRequestId = null }: DispatcherPageProps) {
-  const [requests, setRequests] = useState<RequestItem[]>([]);
-  const [selected, setSelected] = useState<RequestItem | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
-  const [photoFailed, setPhotoFailed] = useState(false);
-
   const [sortBy, setSortBy] = useState<SortBy>('priority');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [page, setPage] = useState(1);
+  const [queueTick, setQueueTick] = useState(0);
+  const [selectedId, setSelectedId] = useState<number | null>(focusRequestId);
 
-  const [selectedClass, setSelectedClass] = useState<DefectClass>('big');
-  const [selectedGroup, setSelectedGroup] = useState<StreetGroup>('А');
-  const [selectedContractorId, setSelectedContractorId] = useState<number | ''>('');
-  const [dispatcherNote, setDispatcherNote] = useState('');
+  // ---- Очередь «На проверке»: сортировку и страницы делает бэкенд ----
+  const queueKey = `${sortBy}|${page}|${queueTick}`;
+  const [queue, setQueue] = useState<{
+    key: string;
+    items: DispatcherRequestSummary[];
+    total: number;
+    error?: string;
+  } | null>(null);
 
-  // Очередь: только заявки «На проверке»
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      setIsLoading(true);
-      let items: RequestItem[];
-      try {
-        const data = await api.getRequests({ status: QUEUE_STATUS, sort: 'priority' });
-        items = (data.items ?? []).filter((r) => r.status === QUEUE_STATUS);
-      } catch (err) {
-        console.warn('Сервер недоступен, показаны демо-заявки:', (err as Error).message);
-        items = DEMO_REQUESTS.filter((r) => r.status === QUEUE_STATUS);
-        setNotice({ type: 'info', text: 'Сервер недоступен — показаны демо-данные, изменения сохраняются только на экране.' });
-      }
-      if (cancelled) return;
-      setRequests(items);
-      setSelected((prev) => prev ?? sortRequests(items, 'priority')[0] ?? null);
-      setIsLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Переход с карты: показать нужную заявку (один раз), даже если она уже не в очереди
-  const handledFocusId = useRef<number | null>(null);
-  useEffect(() => {
-    if (focusRequestId == null || isLoading || handledFocusId.current === focusRequestId) return;
-    handledFocusId.current = focusRequestId;
-    const inQueue = requests.find((r) => r.id === focusRequestId);
-    if (inQueue) {
-      setSelected(inQueue);
-      return;
-    }
     api
-      .getRequestById(focusRequestId)
-      .catch(() => DEMO_REQUESTS.find((r) => r.id === focusRequestId) ?? null)
-      .then((r) => r && setSelected(r));
-  }, [focusRequestId, isLoading, requests]);
-
-  // Подгрузка деталей выбранной заявки (фото, история) и сброс формы решения
-  const selectedId = selected?.id;
-  useEffect(() => {
-    if (!selected) return;
-    setSelectedClass(selected.defect_class);
-    setSelectedGroup(selected.street_group);
-    setSelectedContractorId(selected.contractor_id ?? '');
-    setDispatcherNote('');
-    setPhotoFailed(false);
-
-    let cancelled = false;
-    api
-      .getRequestById(selected.id)
-      .then((details) => {
-        if (!cancelled) setSelected((prev) => (prev && prev.id === details.id ? { ...prev, ...details } : prev));
+      .getRequests({
+        status: ['on_review'],
+        sort: sortBy,
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
       })
-      .catch(() => {
-        /* работаем с тем, что уже есть в списке */
+      .then((data) => {
+        if (cancelled) return;
+        // Решили последнюю заявку на странице — возвращаемся на предыдущую
+        if (data.items.length === 0 && data.total > 0 && page > 1) {
+          setPage(page - 1);
+          return;
+        }
+        setQueue({ key: queueKey, items: data.items, total: data.total });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setQueue({ key: queueKey, items: [], total: 0, error: errorText(err) });
       });
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [queueKey, sortBy, page]);
 
-  const sorted = useMemo(() => sortRequests(requests, sortBy), [requests, sortBy]);
-  const pagedRequests = useMemo(
-    () => sorted.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [sorted, currentPage]
-  );
+  const isQueueLoading = queue?.key !== queueKey;
+  const items = queue?.items ?? [];
+  const total = queue?.total ?? 0;
 
-  const canDecide = selected?.status === QUEUE_STATUS;
+  // Как в макете: пока заявка не выбрана, справа подсказка «Выберите заявку из списка слева»
+  const activeId = selectedId;
 
-  const handleDecision = async (to: 'Принято' | 'Требует уточнения' | 'Отклонено') => {
-    if (!selected || !canDecide) return;
+  // ---- Карточка выбранной заявки: детали и история ----
+  const [detailState, setDetailState] = useState<{
+    id: number;
+    detail: DispatcherRequestOut | null;
+    events: EventOut[];
+    error?: string;
+  } | null>(null);
+  const [detailTick, setDetailTick] = useState(0);
 
-    if (to === 'Отклонено' && !dispatcherNote.trim()) {
-      setNotice({ type: 'error', text: 'Для отклонения заявки укажите причину в служебном комментарии.' });
-      return;
-    }
-
-    setIsSubmitting(true);
-    setNotice(null);
-
-    let offline = false;
-    let version = selected.version;
-
-    try {
-      const fieldsChanged = selectedClass !== selected.defect_class || selectedGroup !== selected.street_group;
-      if (fieldsChanged) {
-        const res = await api.updateRequestFields(selected.id, {
-          defect_class: selectedClass,
-          street_group: selectedGroup,
-          version,
-        });
-        version = res.version ?? version;
-      }
-      if (selectedContractorId !== '' && selectedContractorId !== (selected.contractor_id ?? '')) {
-        await api.setRequestContractor(selected.id, selectedContractorId);
-      }
-      const res = await api.updateRequestStatus(selected.id, to, version, dispatcherNote.trim());
-      version = res.version ?? version + 1;
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setNotice({
-          type: 'error',
-          text: err.status === 409 ? 'Заявка была изменена другим пользователем. Обновите страницу и повторите.' : err.message,
-        });
-        setIsSubmitting(false);
-        return;
-      }
-      offline = true; // сеть недоступна — применяем локально (демо-режим)
-      version += 1;
-    }
-
-    const updated: RequestItem = {
-      ...selected,
-      status: to,
-      version,
-      defect_class: selectedClass,
-      street_group: selectedGroup,
-      contractor_id: selectedContractorId === '' ? selected.contractor_id : selectedContractorId,
-      contractor_name:
-        selectedContractorId === '' ? selected.contractor_name : contractorName(selectedContractorId),
-      history: [
-        ...(selected.history ?? []),
-        { time: new Date().toISOString(), status_from: selected.status, status_to: to, user: 'Иванова Е. А.' },
-      ],
+  useEffect(() => {
+    if (activeId == null) return;
+    let cancelled = false;
+    Promise.all([api.getRequestById(activeId), api.getRequestEvents(activeId).catch(() => [] as EventOut[])])
+      .then(([detail, events]) => {
+        if (!cancelled) setDetailState({ id: activeId, detail, events });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setDetailState({ id: activeId, detail: null, events: [], error: errorText(err) });
+      });
+    return () => {
+      cancelled = true;
     };
+  }, [activeId, detailTick]);
 
-    // Решённая заявка уходит из очереди, выбираем следующую
-    const rest = sortRequests(requests.filter((r) => r.id !== selected.id), sortBy);
-    const idx = sorted.findIndex((r) => r.id === selected.id);
-    setRequests(rest);
-    setSelected(rest[Math.min(Math.max(idx, 0), rest.length - 1)] ?? updated);
-    setCurrentPage((p) => Math.min(p, Math.max(1, Math.ceil(rest.length / PAGE_SIZE))));
-    setNotice({
-      type: offline ? 'info' : 'ok',
-      text: `Заявка № ${selected.id} переведена в статус «${to}»${offline ? ' (только на экране: сервер недоступен)' : ''}.`,
-    });
-    setIsSubmitting(false);
+  const current = detailState && detailState.id === activeId ? detailState : null;
+  const isDetailLoading = activeId != null && current === null;
+
+  // Решение принято: показываем сообщение, берём следующую заявку и перечитываем очередь
+  const handleDecided = (decidedId: number, text: string) => {
+    const idx = items.findIndex((r) => r.id === decidedId);
+    const next = items[idx + 1] ?? items[idx - 1] ?? null;
+    setSelectedId(next ? next.id : null);
+    setNotice({ type: 'ok', text });
+    setQueueTick((t) => t + 1);
   };
 
-  const selectedRemaining = remainingInfo(selected?.planned_due);
+  // 409: заявку изменил другой диспетчер — показываем сообщение и перечитываем данные
+  const handleConflict = (message: string) => {
+    setNotice({ type: 'error', text: message });
+    setDetailTick((t) => t + 1);
+    setQueueTick((t) => t + 1);
+  };
 
+  const queueNotice = queue?.error ? { type: 'error' as const, text: `Не удалось загрузить очередь: ${queue.error}` } : null;
+  const shownNotice = notice ?? queueNotice;
+
+  const CHIP_TONE = {
+    red: 'bg-red-700 text-white',
+    orange: 'bg-orange-500 text-white',
+    gray: 'bg-neutral-100 text-[#131B2E]',
+  } as const;
+
+  // Макет «Веб/Треб_панель»: заголовок 42 px, колонки 327 px + 40 px зазор + карточка, поля 24 px
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-100 font-sans text-neutral-800 antialiased">
-      <header className="px-8 pt-6 pb-3 flex items-center justify-between shrink-0">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-100 text-neutral-800 antialiased">
+      <header className="h-[42px] px-6 flex items-center justify-between shrink-0 border-b border-neutral-200">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-neutral-900">Требует решения: Новые заявки</h1>
-          {isLoading && <Loader2 className="w-4 h-4 animate-spin text-red-700" />}
+          <h1 className="text-2xl font-bold leading-none text-neutral-800">Требует решения: Новые заявки</h1>
+          {isQueueLoading && <Loader2 className="w-4 h-4 animate-spin text-red-700" />}
         </div>
 
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-neutral-400 font-medium">Сортировка:</span>
+          <span className="font-light text-neutral-600">Сортировка:</span>
           <select
             value={sortBy}
             onChange={(e) => {
               setSortBy(e.target.value as SortBy);
-              setCurrentPage(1);
+              setPage(1);
             }}
-            className="h-8 px-3 bg-white border border-neutral-300 rounded-xl font-semibold outline-none focus:border-red-600 shadow-sm"
+            className="h-7 px-2 bg-white border border-neutral-400 rounded-lg text-xs outline-none focus:border-red-700"
           >
             <option value="priority">По срочности ГОСТ (приоритет)</option>
-            <option value="date">По дате подачи</option>
+            <option value="detected_at">По дате подачи</option>
           </select>
         </div>
       </header>
 
-      {notice && (
+      {shownNotice && (
         <div
           role="status"
-          className={`mx-8 mb-3 px-4 py-2.5 rounded-xl text-xs font-medium border shrink-0 flex items-center justify-between ${
-            notice.type === 'error'
+          className={`mx-6 mt-2 px-4 py-2 rounded-xl text-xs border shrink-0 flex items-center justify-between ${
+            shownNotice.type === 'error'
               ? 'bg-red-50 border-red-200 text-red-800'
-              : notice.type === 'ok'
+              : shownNotice.type === 'ok'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
               : 'bg-amber-50 border-amber-200 text-amber-900'
           }`}
         >
-          <span>{notice.text}</span>
-          <button type="button" onClick={() => setNotice(null)} className="ml-4 font-bold cursor-pointer" aria-label="Закрыть">
+          <span>{shownNotice.text}</span>
+          <button type="button" onClick={() => setNotice(null)} className="ml-4 cursor-pointer" aria-label="Закрыть">
             ✕
           </button>
         </div>
       )}
 
-      <div className="flex-1 px-8 pb-6 flex gap-6 overflow-hidden">
-        <section className="w-80 flex flex-col shrink-0">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-3">
-            Очередь на подтверждение ({requests.length})
-          </h2>
+      <div className="flex-1 min-h-0 px-6 pt-[10px] pb-4 flex gap-10">
+        <section className="w-[327px] shrink-0 min-h-0 flex flex-col gap-[10px]">
+          <div className="text-xs font-light text-neutral-800 uppercase">Очередь на подтверждение</div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-            {!isLoading && requests.length === 0 && (
-              <div className="bg-white rounded-2xl p-6 border border-neutral-200 text-center text-xs text-neutral-400">
+          <div className="flex flex-col gap-[10px] min-h-0 overflow-y-auto">
+            {!isQueueLoading && items.length === 0 && (
+              <div className="bg-white rounded-xl p-6 border border-neutral-200 text-center text-xs text-neutral-500">
                 Новых заявок нет
               </div>
             )}
-            {pagedRequests.map((item) => {
-              const isSelected = selected?.id === item.id;
-              const rem = remainingInfo(item.planned_due);
+            {items.map((item) => {
+              const isSelected = activeId === item.id;
+              const chip = remainingChip(item.planned_due_at);
               return (
                 <div
                   key={item.id}
-                  onClick={() => setSelected(item)}
-                  className={`bg-white rounded-2xl p-4 border transition-all cursor-pointer shadow-sm hover:shadow ${
-                    isSelected ? 'border-red-600 ring-2 ring-red-100' : 'border-neutral-200 hover:border-neutral-300'
+                  onClick={() => setSelectedId(item.id)}
+                  className={`bg-white rounded-xl p-[17px] flex flex-col gap-3 cursor-pointer border transition-colors ${
+                    isSelected
+                      ? 'border-red-700 shadow-[0_1px_1px_rgba(0,0,0,0.05)]'
+                      : 'border-neutral-200 hover:border-neutral-400'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <span
-                      className={`text-xs font-semibold px-2 py-0.5 rounded text-white ${
-                        rem.urgent ? 'bg-red-700' : 'bg-amber-600'
-                      }`}
-                    >
-                      {rem.label}
+                  <div className="flex items-center justify-between">
+                    <span className={`px-2 py-0.5 rounded text-[11px] leading-[16px] font-normal ${CHIP_TONE[chip.tone]}`}>
+                      {chip.label}
                     </span>
-                    <span className="text-xs text-neutral-400">{formatTime(item.created_at)}</span>
+                    <span className="text-xs text-neutral-600">{formatDateTime(item.detected_at)}</span>
                   </div>
 
-                  <div className="flex gap-3 items-center">
-                    <div className="w-12 h-12 rounded-xl bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-400 shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 shrink-0 rounded-lg border border-neutral-200 bg-neutral-100 flex items-center justify-center text-neutral-400">
                       <Camera className="w-5 h-5" />
                     </div>
-                    <div className="truncate">
-                      <div className="text-xs text-neutral-400 font-medium">
-                        № {item.id} (v.{item.version})
-                      </div>
-                      <div className="text-sm font-bold text-neutral-900 truncate">{item.address}</div>
-                      <div className="text-xs text-neutral-500 mt-0.5">
-                        {DEFECT_CLASS_LABEL[item.defect_class]} яма · группа {item.street_group}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-neutral-600">ID {item.id}</div>
+                      <div className="text-sm text-[#131B2E] truncate leading-[22px]">{item.address ?? 'Адрес не определён'}</div>
+                      <div className="text-xs text-neutral-600 pt-0.5 truncate">
+                        {DEFECT_CLASS_LABEL[item.defect_class]} яма
+                        {item.street_group ? '' : ' · группа не определена'}
+                        {item.duplicates_count ? ' · возможный дубликат' : ''}
                       </div>
                     </div>
                   </div>
@@ -296,216 +243,374 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
             })}
           </div>
 
-          <div className="bg-white rounded-xl border border-neutral-200 p-2 shadow-sm mt-3">
-            <Pagination
-              currentPage={currentPage}
-              totalItems={requests.length}
-              pageSize={PAGE_SIZE}
-              onPageChange={setCurrentPage}
-              itemLabel="заявок"
-            />
-          </div>
+          <Pagination currentPage={page} totalItems={total} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </section>
 
-        <main className="flex-1 bg-white rounded-3xl border border-neutral-200 shadow-sm p-6 overflow-y-auto">
-          {selected ? (
-            <div className="flex flex-col gap-5 max-w-4xl">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-lg font-bold text-neutral-900">Карточка заявки № {selected.id}</h2>
-                  <span className="bg-neutral-500 text-white text-xs px-2.5 py-0.5 rounded-full font-medium">
-                    {selected.status}
-                  </span>
-                  <span className="text-xs text-neutral-400 font-mono">v.{selected.version}</span>
-                </div>
-                <p className="text-xs text-neutral-400 mt-1">
-                  Зарегистрировано в системе: {formatDateTime(selected.created_at)} (Томск)
-                </p>
-                {!canDecide && (
-                  <p className="text-xs text-amber-700 mt-1">
-                    Заявка не в очереди на проверку — доступен только просмотр.
-                  </p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-2">Фото дефекта</label>
-                  {selected.photo_url && !photoFailed ? (
-                    <img
-                      src={selected.photo_url}
-                      alt="Фото дефекта"
-                      onError={() => setPhotoFailed(true)}
-                      className="w-full h-56 rounded-2xl object-cover border border-neutral-200 bg-neutral-100"
-                    />
-                  ) : (
-                    <div className="w-full h-56 rounded-2xl bg-neutral-100 border border-neutral-200 flex flex-col items-center justify-center text-neutral-400 p-4">
-                      <ImageOff className="w-10 h-10 mb-2" />
-                      <span className="text-xs font-bold uppercase tracking-wider text-center">
-                        Фото не загружено
-                      </span>
-                    </div>
-                  )}
-                  <div className="text-xs text-neutral-500 mt-2">
-                    Заявитель:{' '}
-                    <span className="text-neutral-800">
-                      {selected.applicant_phone ?? '—'} {selected.applicant_name ?? ''}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-3.5">
-                  <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
-                    <div className="text-xs text-neutral-400">Адрес дефекта</div>
-                    <div className="text-sm font-semibold text-neutral-900 mt-0.5">
-                      {selected.full_address ?? selected.address}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-neutral-500 mt-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-neutral-400" />
-                      {selected.lat != null && selected.lon != null
-                        ? `${selected.lat.toFixed(5)}, ${selected.lon.toFixed(5)}`
-                        : 'Координаты не указаны'}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
-                      <div className="text-xs text-neutral-400">Плановый срок ГОСТ</div>
-                      <div className={`text-xs font-bold mt-1 ${selectedRemaining.urgent ? 'text-red-600' : 'text-neutral-800'}`}>
-                        {formatDateTime(selected.planned_due)}
-                      </div>
-                      <div className="text-[11px] text-neutral-400 mt-0.5">{selectedRemaining.label}</div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-neutral-600 mb-1">Класс ямы</label>
-                      <select
-                        value={selectedClass}
-                        disabled={!canDecide}
-                        onChange={(e) => setSelectedClass(e.target.value as DefectClass)}
-                        className="w-full h-11 px-3 text-sm bg-white border border-neutral-300 rounded-xl outline-none disabled:bg-neutral-50"
-                      >
-                        <option value="big">Большая</option>
-                        <option value="small">Маленькая</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-neutral-600 mb-1">Группа улицы</label>
-                      <select
-                        value={selectedGroup}
-                        disabled={!canDecide}
-                        onChange={(e) => setSelectedGroup(e.target.value as StreetGroup)}
-                        className="w-full h-11 px-3 text-sm bg-white border border-neutral-300 rounded-xl outline-none disabled:bg-neutral-50"
-                      >
-                        {STREET_GROUPS.map((g) => (
-                          <option key={g} value={g}>
-                            Категория {g}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-neutral-600 mb-1">Подрядчик</label>
-                      <select
-                        value={selectedContractorId}
-                        disabled={!canDecide}
-                        onChange={(e) => setSelectedContractorId(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="w-full h-11 px-3 text-sm bg-white border border-neutral-300 rounded-xl outline-none disabled:bg-neutral-50"
-                      >
-                        <option value="">Не назначен</option>
-                        {CONTRACTORS.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-3 flex items-center gap-2">
-                    <ShieldCheck className="w-5 h-5 text-red-600 shrink-0" />
-                    <span className="text-xs font-semibold text-neutral-800">
-                      Рекомендация системы: «{selected.recommended_status ?? 'Принято'}»
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-700 mb-2">
-                  <History className="w-3.5 h-3.5 text-neutral-400" />
-                  <span>История статусов</span>
-                </div>
-                {selected.history && selected.history.length > 0 ? (
-                  <ul className="space-y-1.5 border-l-2 border-neutral-200 pl-4">
-                    {selected.history.map((h, i) => (
-                      <li key={i} className="text-xs text-neutral-600">
-                        <span className="text-neutral-400">{formatDateTime(h.time)}</span>{' '}
-                        <span className="font-semibold text-neutral-800">
-                          {h.status_from ? `${h.status_from} → ` : ''}
-                          {h.status_to}
-                        </span>{' '}
-                        <span className="text-neutral-400">· {h.user}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="text-xs text-neutral-400">История пока пуста</div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-neutral-700 mb-1.5">
-                  Служебный комментарий / причина отклонения:
-                </label>
-                <textarea
-                  rows={2}
-                  value={dispatcherNote}
-                  disabled={!canDecide}
-                  onChange={(e) => setDispatcherNote(e.target.value)}
-                  placeholder="Обязательно для статуса «Отклонено»..."
-                  className="w-full p-3 text-sm bg-white border border-neutral-300 rounded-xl outline-none disabled:bg-neutral-50"
-                />
-              </div>
-
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  disabled={isSubmitting || !canDecide}
-                  onClick={() => handleDecision('Принято')}
-                  className="flex-1 py-3 px-4 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-xl cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Подтвердить статус «Принято»
-                </button>
-                <button
-                  type="button"
-                  disabled={isSubmitting || !canDecide}
-                  onClick={() => handleDecision('Требует уточнения')}
-                  className="flex-1 py-3 px-4 bg-neutral-400 hover:bg-neutral-500 text-white text-sm font-semibold rounded-xl cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Запросить уточнение
-                </button>
-                <button
-                  type="button"
-                  disabled={isSubmitting || !canDecide}
-                  onClick={() => handleDecision('Отклонено')}
-                  className="flex-1 py-3 px-4 bg-red-800 hover:bg-red-900 text-white text-sm font-semibold rounded-xl cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Отклонить заявку
-                </button>
-              </div>
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto bg-white border border-[#DAE2FD] rounded-2xl shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+          {current?.detail ? (
+            <RequestCard
+              key={current.detail.id}
+              detail={current.detail}
+              events={current.events}
+              onDecided={handleDecided}
+              onConflict={handleConflict}
+              onError={(text) => setNotice({ type: 'error', text })}
+            />
+          ) : current?.error ? (
+            <div className="h-full flex items-center justify-center text-sm text-neutral-600 p-6">
+              Не удалось загрузить заявку: {current.error}
+            </div>
+          ) : isDetailLoading ? (
+            <div className="h-full flex items-center justify-center">
+              <Loader2 className="w-5 h-5 animate-spin text-red-700" />
             </div>
           ) : (
-            <div className="h-full flex items-center justify-center text-neutral-400 text-sm">
-              {isLoading ? 'Загрузка заявок…' : 'Выберите заявку из списка'}
+            <div className="h-full flex flex-col items-center justify-center text-center px-10">
+              <div className="w-16 h-16 rounded-2xl bg-neutral-200 flex items-center justify-center mb-4">
+                <MousePointerClick className="w-7 h-7 text-red-700" />
+              </div>
+              <h2 className="text-lg font-bold text-neutral-800">Выберите заявку из списка слева</h2>
+              <p className="mt-2 max-w-[360px] text-xs font-light text-neutral-600">
+                Нажмите на заявку из очереди, чтобы просмотреть фотофиксацию, параметры дефекта по ГОСТ и перевести в работу.
+              </p>
             </div>
           )}
         </main>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Карточка заявки с формой решения. Пересоздаётся (key) при смене заявки,
+// поэтому начальные значения полей берутся прямо из detail.
+// ---------------------------------------------------------------------------
+interface RequestCardProps {
+  detail: DispatcherRequestOut;
+  events: EventOut[];
+  onDecided: (id: number, text: string) => void;
+  onConflict: (message: string) => void;
+  onError: (text: string) => void;
+}
+
+function RequestCard({ detail, events, onDecided, onConflict, onError }: RequestCardProps) {
+  const { streetGroups, contractors } = useReference();
+
+  const [selectedClass, setSelectedClass] = useState<DefectClass>(detail.defect_class);
+  const [selectedGroup, setSelectedGroup] = useState<StreetGroupCode | ''>(detail.street_group ?? '');
+  const [selectedContractorId, setSelectedContractorId] = useState<number | ''>(detail.contractor?.id ?? '');
+  const [rejectReason, setRejectReason] = useState<RejectReason | ''>('');
+  const [note, setNote] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const submitting = useRef(false);
+
+  const canDecide = detail.status.code === 'on_review';
+  const remaining = remainingInfo(detail.planned_due_at);
+
+  // Неактивных подрядчиков в выборе не показываем (кроме уже назначенного)
+  const contractorOptions = contractors.filter((c) => c.is_active || c.id === detail.contractor?.id);
+
+  const handleDecision = async (to: Decision) => {
+    if (!canDecide || submitting.current) return;
+    setFormError(null);
+
+    if (to === 'rejected') {
+      if (!rejectReason) return setFormError('Для отклонения выберите причину.');
+      if (!note.trim()) return setFormError('Для отклонения заявки укажите комментарий.');
+    }
+    if (to === 'accepted' && !selectedGroup) {
+      return setFormError('Чтобы принять заявку, выберите группу улицы.');
+    }
+
+    submitting.current = true;
+    setIsSubmitting(true);
+    try {
+      // Каждый запрос возвращает полную карточку с новым version — берём его для следующего шага
+      let version = detail.version;
+      if (selectedClass !== detail.defect_class) {
+        version = (await api.updateRequestClass(detail.id, selectedClass, version)).version;
+      }
+      if (selectedGroup && selectedGroup !== detail.street_group) {
+        version = (await api.updateRequestStreetGroup(detail.id, selectedGroup, version)).version;
+      }
+      if (selectedContractorId !== '' && selectedContractorId !== detail.contractor?.id) {
+        version = (await api.setRequestContractor(detail.id, selectedContractorId, version)).version;
+      }
+      const result = await api.updateRequestStatus(detail.id, {
+        to,
+        version,
+        comment: note.trim() || undefined,
+        reject_reason: to === 'rejected' && rejectReason ? rejectReason : undefined,
+      });
+      onDecided(detail.id, `Заявка № ${detail.id} переведена в статус «${result.status.label}».`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        onConflict(err.message); // «заявку уже изменил другой диспетчер» и др. — текст с бэкенда
+      } else {
+        onError(errorText(err));
+      }
+    } finally {
+      submitting.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
+  const statusColor = STATUS_COLOR[detail.status.code];
+
+  return (
+    <div className="p-[25px] flex flex-col gap-3">
+      <div className="border-b border-[#DAE2FD] pb-[17px] flex flex-col gap-0.5">
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-normal text-[#131B2E]">Карточка заявки ID {detail.id}</h2>
+          <span
+            className="px-3 h-[15px] leading-[15px] rounded-xl text-[11px] font-light text-white"
+            style={{ backgroundColor: statusColor }}
+          >
+            {detail.status.label}
+          </span>
+          <span className="text-xs font-light text-neutral-500">v.{detail.version}</span>
+        </div>
+        <p className="text-xs font-light text-neutral-600">
+          Подано {formatDateTime(detail.detected_at).replace(' ', ' в ')}
+        </p>
+        {!canDecide && (
+          <p className="text-xs text-amber-800">Заявка не в очереди на проверку — доступен только просмотр.</p>
+        )}
+        {detail.status.code === 'rejected' && detail.decision_comment && (
+          <p className="text-xs text-neutral-600">
+            Причина отклонения: {detail.reject_reason ? `${REJECT_REASON_LABEL[detail.reject_reason]}. ` : ''}
+            {detail.decision_comment}
+          </p>
+        )}
+        {detail.must_fix && <p className="text-xs text-red-700">Дефект подлежит обязательному устранению.</p>}
+        {detail.duplicate_of_id != null && (
+          <p className="text-xs text-amber-800">Возможный дубликат заявки № {detail.duplicate_of_id}.</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-12 gap-6 items-start">
+        <div className="col-span-5 flex flex-col gap-[7.5px]">
+          <div className="text-sm text-neutral-800">Фото дефекта</div>
+          {/* Ссылки на фото подписаны и живут 15 минут — не кэшируем */}
+          <div className="h-[224px] rounded-xl border border-neutral-200 bg-neutral-100 overflow-hidden flex items-center justify-center">
+            {detail.photo_before_url && !photoFailed ? (
+              <img
+                src={detail.photo_before_url}
+                alt="Фото дефекта"
+                onError={() => setPhotoFailed(true)}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="flex flex-col items-center text-neutral-500 text-center">
+                <ImageOff className="w-10 h-10 mb-2" />
+                <span className="text-xs uppercase font-bold leading-tight">
+                  Фото временно
+                  <br />
+                  отсутствует
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="px-1 text-xs text-neutral-600">
+            {detail.applicant ? (
+              <>
+                Заявитель: {detail.applicant.phone} {detail.applicant.last_name} {detail.applicant.first_name}
+              </>
+            ) : (
+              <>Заявитель: контакты скрыты до статуса «Требует уточнения»</>
+            )}
+          </div>
+        </div>
+
+        <div className="col-span-7 flex flex-col gap-[10px]">
+          <div className="bg-neutral-100 rounded-xl p-3 flex flex-col gap-1">
+            <div className="text-sm text-neutral-600">Адрес дефекта</div>
+            <div className="text-xs font-light text-neutral-800">
+              {detail.address ? `г. Томск, ${detail.address}` : 'Адрес не определён'}
+            </div>
+          </div>
+
+          <div className="flex gap-3 items-start">
+            <div className="flex-1 min-w-0 h-[79px] bg-neutral-100 rounded-xl px-3 pt-3 pb-[10px] flex flex-col gap-1">
+              <div className="text-sm text-neutral-600 leading-tight">
+                Плановая дата
+                <br />
+                устранения
+              </div>
+              <div className="text-xs font-light text-red-700">
+                {detail.planned_due_at ? `${formatDateTime(detail.planned_due_at)} (${remaining.label})` : '—'}
+              </div>
+            </div>
+            <FieldSelect
+              label="Класс ямы"
+              className="w-[171px] shrink-0"
+              value={selectedClass}
+              disabled={!canDecide}
+              onChange={(v) => setSelectedClass(v as DefectClass)}
+            >
+              <option value="big">Большая</option>
+              <option value="small">Маленькая</option>
+            </FieldSelect>
+          </div>
+
+          <div className="flex gap-1 items-start">
+            <FieldSelect
+              label="Группа улицы"
+              className="w-[171px] shrink-0"
+              value={selectedGroup}
+              disabled={!canDecide}
+              onChange={(v) => setSelectedGroup(v as StreetGroupCode | '')}
+            >
+              <option value="">Не выбрана</option>
+              {streetGroups.map((g) => (
+                <option key={g.code} value={g.code}>
+                  Категория {g.code}
+                </option>
+              ))}
+            </FieldSelect>
+            <FieldSelect
+              label="Подрядчик"
+              className="flex-1 min-w-0"
+              value={selectedContractorId === '' ? '' : String(selectedContractorId)}
+              disabled={!canDecide}
+              onChange={(v) => setSelectedContractorId(v === '' ? '' : Number(v))}
+            >
+              <option value="">Не назначен</option>
+              {contractorOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </FieldSelect>
+          </div>
+
+          <div className="bg-neutral-100 border border-neutral-200 rounded-xl p-[15px] flex items-center gap-3">
+            <ShieldCheck className="w-[15px] h-[19px] text-red-700 shrink-0" />
+            <span className="text-sm text-neutral-800">Рекомендованный статус: «{detail.recommendation.label}»</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-neutral-100 border border-neutral-200 rounded-xl p-[15px] text-sm text-black">
+        {detail.citizen_comment ? `Комментарий заявителя: ${detail.citizen_comment}` : 'Комментарий заявителя отсутствует.'}
+      </div>
+
+      <div className="border-t border-neutral-200 pt-[11px] flex flex-col gap-[10px]">
+        <div className="flex items-center gap-1.5 text-sm text-neutral-800">
+          <History className="w-[13px] h-[13px] text-red-700" />
+          <span>История заявки</span>
+        </div>
+        {events.length > 0 ? (
+          <ul className="flex flex-col gap-2">
+            {events.map((h) => (
+              <li key={h.id} className="flex items-center gap-2 text-xs font-light">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-700 shrink-0" />
+                <span className="text-neutral-800">{formatTime(h.created_at)}</span>
+                <span className="text-neutral-600">
+                  — {describeEvent(h)} · {h.actor}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="text-xs font-light text-neutral-500">История пока пуста</div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <label htmlFor="decision-note" className="text-sm text-neutral-800">
+          Добавьте комментарий:
+        </label>
+        <textarea
+          id="decision-note"
+          value={note}
+          disabled={!canDecide}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Обязателен для статуса «Отклонено»"
+          className="h-[46px] w-full resize-none rounded-md border-2 border-neutral-400 bg-white px-3 py-2 text-sm shadow-[0_4px_8px_rgba(0,0,0,0.15)] outline-none placeholder:text-neutral-400 focus:border-red-700 disabled:bg-neutral-100"
+        />
+        <div className="flex items-center gap-3 text-xs text-neutral-600">
+          <span>Причина отклонения:</span>
+          <select
+            value={rejectReason}
+            disabled={!canDecide}
+            onChange={(e) => setRejectReason(e.target.value as RejectReason | '')}
+            className="h-8 rounded-lg border border-neutral-400 bg-white px-2 text-xs outline-none focus:border-red-700 disabled:bg-neutral-100"
+          >
+            <option value="">Не выбрана</option>
+            {(Object.keys(REJECT_REASON_LABEL) as RejectReason[]).map((r) => (
+              <option key={r} value={r}>
+                {REJECT_REASON_LABEL[r]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {formError && <div className="text-xs text-red-700">{formError}</div>}
+
+      <div className="border-t border-[#DAE2FD] pt-[11px] flex items-center justify-center gap-3">
+        <button
+          type="button"
+          disabled={isSubmitting || !canDecide}
+          onClick={() => handleDecision('accepted')}
+          className="h-[43px] w-[194px] rounded-xl bg-red-700 hover:bg-red-800 text-sm font-normal text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Подтвердить статус “Принято”
+        </button>
+        <button
+          type="button"
+          disabled={isSubmitting || !canDecide}
+          onClick={() => handleDecision('needs_clarification')}
+          className="h-[43px] w-[187px] rounded-xl bg-neutral-400 hover:bg-neutral-500 text-sm font-normal text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Запросить уточнение
+        </button>
+        <button
+          type="button"
+          disabled={isSubmitting || !canDecide}
+          onClick={() => handleDecision('rejected')}
+          className="h-[43px] w-[194px] rounded-xl bg-red-700 hover:bg-red-800 text-sm font-normal text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Отклонить заявку
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Поле-список по макету: подпись 14 px, рамка #9E9E9E, радиус 12, шеврон справа
+function FieldSelect({
+  label,
+  value,
+  onChange,
+  disabled,
+  className = '',
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className={`flex flex-col gap-1 ${className}`}>
+      <span className="text-sm text-neutral-600">{label}</span>
+      <span className="relative block">
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-[45px] w-full appearance-none truncate rounded-xl border border-neutral-400 bg-white pl-[15px] pr-8 text-sm text-neutral-800/80 shadow-[0_2px_2px_rgba(0,0,0,0.04)] outline-none focus:border-red-700 disabled:bg-neutral-100"
+        >
+          {children}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-[9px] top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-800" />
+      </span>
+    </label>
   );
 }
