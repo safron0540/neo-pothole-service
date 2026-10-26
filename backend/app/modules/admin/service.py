@@ -33,6 +33,7 @@ from app.modules.admin.schemas import (
 from app.modules.auth.models import ContractorUser, RefreshToken, User
 from app.modules.auth.security import hash_password
 from app.modules.geo.models import Contractor, District, Street, StreetGroup
+from app.modules.planned_repair import service as planned_repair
 from app.schemas import Page
 
 
@@ -121,6 +122,8 @@ def update_street_group(session: Session, code: str, body: StreetGroupUpdate) ->
     if group is None:
         raise ApiError(404, "not_found", "Группа не найдена")
     group.deadline_hours, group.max_pits = body.deadline_hours, body.max_pits
+    session.flush()
+    planned_repair.recalc_group(session, code)  # новый порог сразу меняет предложения
     session.commit()
     return StreetGroupOut.model_validate(group, from_attributes=True)
 
@@ -197,6 +200,8 @@ def update_street(session: Session, street_id: int, body: StreetUpdate) -> Stree
         street.name = changes["name"].strip()
     if "street_group" in changes:
         street.street_group = changes["street_group"]
+        session.flush()
+        planned_repair.recalc_streets(session, [street.id])  # В-14: порог текущей группы
     if changes.get("district_id") is not None:
         _check_district(session, changes["district_id"])
         street.district_id = changes["district_id"]

@@ -31,6 +31,7 @@ from app.modules.media import service as media
 from app.modules.media.models import Photo
 from app.modules.media.service import photo_url
 from app.modules.notifications.models import Notification
+from app.modules.planned_repair import service as planned_repair
 from app.modules.requests.filters import NEWEST_ORDER, PRIORITY_ORDER, RequestFilter, conditions
 from app.modules.requests.models import InternalNote, Request, RequestEvent
 from app.modules.requests.schemas import (
@@ -219,6 +220,8 @@ def change_status(
         payload["main_id"] = request.merged_into_id
     event = add_event(session, request.id, "status_changed", actor_id, **payload)
     notify_author(session, request, event)
+    if REJECTED in (current, target):
+        planned_repair.recalc_for_request(session, request)  # REQ-046: тот же коммит
     if follow:
         return
 
@@ -282,6 +285,7 @@ def merge(
     session.flush()
     for merged in (request, *children):
         change_status(session, merged, main.status, actor_id, "dispatcher", follow=True)
+        planned_repair.recalc_for_request(session, merged)  # слитая яма больше не считается
     session.commit()
     return dispatcher_card(session, request_id)
 
