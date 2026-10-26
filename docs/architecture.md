@@ -465,6 +465,7 @@ docker compose exec backend alembic upgrade head
 docker compose exec backend python -m scripts.load_streets
 docker compose exec backend python -m scripts.load_buildings
 docker compose exec backend python -m scripts.seed_demo
+docker compose exec backend python -m scripts.load_zones
 ```
 
 ### 12.3 Фоновые задачи, копии и мониторинг
