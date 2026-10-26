@@ -2052,6 +2052,7 @@
           "dispatcher"
         ],
         "summary": "Слить дубликат в основную заявку",
+        "description": "Слитая заявка повторяет статус основной и не видна в списке, на карте и в отчётах.",
         "operationId": "merge_request_api_v1_requests__request_id__merge_post",
         "security": [
           {

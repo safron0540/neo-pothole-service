@@ -8,8 +8,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Query, Response, UploadFile, status
 
-from app.deps import CitizenUser, ContractorStaff, DbSession, DispatcherUser, Paging, Token
-from app.errors import ERROR_RESPONSES, not_implemented
+from app.deps import CitizenUser, ContractorStaff, DbSession, DispatcherUser, Paging
+from app.errors import ERROR_RESPONSES
 from app.modules.media.router import read_limited
 from app.modules.requests import service
 from app.modules.requests.filters import RequestFilter
@@ -197,8 +197,11 @@ def assign_contractor(
     tags=["dispatcher"],
     summary="Слить дубликат в основную заявку",
 )
-def merge_request(request_id: int, body: MergeRequest, token: Token) -> DispatcherRequestOut:
-    not_implemented()
+def merge_request(
+    request_id: int, body: MergeRequest, user: DispatcherUser, session: DbSession
+) -> DispatcherRequestOut:
+    """Слитая заявка повторяет статус основной и не видна в списке, на карте и в отчётах."""
+    return service.merge(session, user.id, request_id, body)
 
 
 @router.delete(
@@ -208,9 +211,9 @@ def merge_request(request_id: int, body: MergeRequest, token: Token) -> Dispatch
     summary="Снять пометку «возможный дубликат»",
 )
 def remove_duplicate_flag(
-    request_id: int, version: Annotated[int, Query()], token: Token
+    request_id: int, version: Annotated[int, Query()], user: DispatcherUser, session: DbSession
 ) -> DispatcherRequestOut:
-    not_implemented()
+    return service.remove_duplicate_flag(session, user.id, request_id, version)
 
 
 @router.get(
