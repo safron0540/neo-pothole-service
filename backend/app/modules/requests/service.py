@@ -516,7 +516,9 @@ def heatmap(session: Session, f: RequestFilter, bbox: str, zoom: int) -> Heatmap
     for name, street_id, segment_idx, n, w, meters, geometry in session.execute(
         query.where(Street.geom.op("&&")(envelope))
     ):
-        per_100m = round(float(w) / max(float(meters), 1) * rules.SEGMENT_LENGTH_M, 2)
+        # Короткий кусок OSM (15–30 м) с одной ямой не должен краснеть: длина не меньше 100 м
+        meters = max(float(meters), rules.SEGMENT_LENGTH_M)
+        per_100m = round(float(w) / meters * rules.SEGMENT_LENGTH_M, 2)
         if detail == "segment":
             per_100m = float(w)  # участок и есть 100 м: считаем ямы на нём как есть
         level = rules.heat_level(per_100m)
