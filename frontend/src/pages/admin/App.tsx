@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import LoginPage from '../login/LoginPage';
 import DispatcherPage from '../dispatcher/DispatcherPage';
 import MapPage from '../dispatcher/MapPage';
@@ -9,16 +9,29 @@ import AdminPage from './AdminPage';
 import UsersPage from './UsersPage';
 import ContractorPage from '../contractor/ContractorPage';
 import { Sidebar } from '../../components/Sidebar';
-import { api } from '../../api';
+import { api, session, AUTH_EXPIRED_EVENT, IS_DEMO } from '../../api';
 
 export default function App() {
-  const [userRole, setUserRole] = useState<'dispatcher' | 'contractor' | null>(null);
+  // Сессию восстанавливаем из localStorage, если токен ещё есть
+  const [userRole, setUserRole] = useState<'dispatcher' | 'contractor' | null>(() =>
+    session.accessToken ? session.role : null
+  );
   const [activeTab, setActiveTab] = useState<'dispatcher' | 'map' | 'planned' | 'reports' | 'contractors' | 'admin' | 'users'>('dispatcher');
 
   const [focusRequestId, setFocusRequestId] = useState<number | null>(null);
 
-  const handleLogout = () => {
-    api.logout();
+  // Токен не удалось обновить (refresh тоже 401) — возвращаем на страницу входа
+  useEffect(() => {
+    const onExpired = () => {
+      setUserRole(null);
+      setActiveTab('dispatcher');
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+  }, []);
+
+  const handleLogout = async () => {
+    await api.logout();
     setUserRole(null);
     setActiveTab('dispatcher');
   };
@@ -28,7 +41,12 @@ export default function App() {
   }
 
   return (
-    <div className="relative flex h-screen w-full bg-neutral-100 font-sans antialiased overflow-hidden">
+    <div className="relative flex h-screen w-full bg-neutral-100 antialiased overflow-hidden">
+      {IS_DEMO && (
+        <div className="absolute bottom-3 right-3 z-[2000] px-3 py-1.5 rounded-full bg-neutral-800 text-white text-xs shadow-lg pointer-events-none">
+          Демо-режим: изменения хранятся только в браузере
+        </div>
+      )}
       {userRole === 'contractor' ? (
         <ContractorPage onLogout={handleLogout} />
       ) : (
