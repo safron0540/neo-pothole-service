@@ -110,3 +110,17 @@ def format_address(street: str | None, house: str | None, district: str | None) 
     if not street:
         return None
     return ", ".join(p for p in (street, house, district) if p)
+
+
+def done_on_time(completed_at: datetime | None, planned_due_at: datetime | None) -> bool | None:
+    """Выполнено в срок: дата выполнения не позже плановой [D] (REQ-066). Нет дат — None."""
+    if completed_at is None or planned_due_at is None:
+        return None
+    return completed_at <= planned_due_at
+
+
+def hours_between(start: datetime | None, end: datetime | None) -> float | None:
+    """Длительность в часах, например от обнаружения до выполнения (REQ-068)."""
+    if start is None or end is None:
+        return None
+    return round((end - start).total_seconds() / 3600, 1)

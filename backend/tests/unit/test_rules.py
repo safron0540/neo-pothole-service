@@ -148,3 +148,14 @@ def test_req_046_segment_of_short_street_is_zero():
 )
 def test_req_015_address(street, house, district, expected):
     assert rules.format_address(street, house, district) == expected
+
+
+def test_req_066_done_on_time():
+    assert rules.done_on_time(NOW, NOW) is True
+    assert rules.done_on_time(NOW + timedelta(seconds=1), NOW) is False
+    assert rules.done_on_time(None, NOW) is None and rules.done_on_time(NOW, None) is None
+
+
+def test_req_068_hours_between():
+    assert rules.hours_between(NOW, NOW + timedelta(hours=26, minutes=30)) == 26.5
+    assert rules.hours_between(None, NOW) is None
