@@ -3628,6 +3628,7 @@
           "admin"
         ],
         "summary": "Удалить район",
+        "description": "Район, на который ссылаются улицы или заявки, не удаляется: 409.",
         "operationId": "delete_district_api_v1_districts__district_id__delete",
         "security": [
           {
@@ -4185,7 +4186,7 @@
           "admin"
         ],
         "summary": "Изменить улицу",
-        "description": "Правка не меняет уже поданные заявки: адрес и группа в них — снимок.",
+        "description": "Правка не меняет уже поданные заявки: адрес и группа в них — снимок.\nМеняются только переданные поля; street_group: null снимает группу.",
         "operationId": "update_street_api_v1_streets__street_id__patch",
         "security": [
           {
@@ -4584,6 +4585,7 @@
           "admin"
         ],
         "summary": "Изменить подрядчика",
+        "description": "Меняются только переданные поля; is_active: false — подрядчику больше не назначают.",
         "operationId": "update_contractor_api_v1_contractors__contractor_id__patch",
         "security": [
           {
