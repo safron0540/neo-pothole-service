@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas import StatusCode, UtcDateTime
+from app.schemas import DefectClass, Ref, StatusCode, StatusOut, UtcDateTime
 
 GroupBy = Literal["district", "contractor", "street_group"]
 
@@ -45,3 +45,33 @@ class AvgTimeReport(BaseModel):
     group_by: GroupBy
     rows: list[AvgTimeRow]
     generated_at: UtcDateTime
+
+
+class RatingRow(BaseModel):
+    """Строка рейтинга подрядчика (REQ-066). Срок считается от обнаружения (В-17 а)."""
+
+    place: int
+    contractor: Ref
+    is_active: bool
+    done: int
+    done_on_time: int
+    on_time_share: float | None = Field(description="доля выполненных в срок, 0…1")
+    in_progress: int
+    overdue_now: int = Field(description="сейчас в работе и срок прошёл")
+    avg_hours: float | None = Field(description="от обнаружения до выполнения")
+    avg_work_hours: float | None = Field(description="от «В работе» до выполнения (В-17 б)")
+
+
+class HistoryRow(BaseModel):
+    """Заявка в истории подрядчика (REQ-065)."""
+
+    id: int
+    status: StatusOut
+    defect_class: DefectClass
+    address: str | None
+    detected_at: UtcDateTime
+    planned_due_at: UtcDateTime | None
+    completed_at: UtcDateTime | None
+    on_time: bool | None = Field(description="пусто, пока не выполнена")
+    hours: float | None = Field(description="от обнаружения до выполнения")
+    is_overdue: bool
