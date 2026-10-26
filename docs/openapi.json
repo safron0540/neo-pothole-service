@@ -2711,6 +2711,260 @@
         }
       }
     },
+    "/api/v1/map/heatmap": {
+      "get": {
+        "tags": [
+          "dispatcher"
+        ],
+        "summary": "Тепловая карта по дорогам",
+        "description": "Линии дорог с ямами, цвет — по весу ям на 100 м: low < 2 ≤ medium < 4 ≤ high < 7 ≤\ncritical. Большая яма — 1, маленькая — 0,5. Без status считаются неустранённые ямы\n(на проверке, уточнение, принято, в работе). Фильтры — как у /map/points.",
+        "operationId": "map_heatmap_api_v1_map_heatmap_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bbox",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "запад,юг,восток,север",
+              "examples": [
+                "84.9,56.4,85.1,56.5"
+              ],
+              "title": "Bbox"
+            },
+            "description": "запад,юг,восток,север"
+          },
+          {
+            "name": "zoom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "description": "масштаб Leaflet map.getZoom()",
+              "default": 14,
+              "title": "Zoom"
+            },
+            "description": "масштаб Leaflet map.getZoom()"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "on_review",
+                      "accepted",
+                      "rejected",
+                      "needs_clarification",
+                      "in_progress",
+                      "done"
+                    ],
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "defect_class",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "big",
+                    "small"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Defect Class"
+            }
+          },
+          {
+            "name": "district_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "District Id"
+            }
+          },
+          {
+            "name": "street_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "А",
+                    "Б",
+                    "В",
+                    "Г",
+                    "Д",
+                    "Е"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Street Group"
+            }
+          },
+          {
+            "name": "contractor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Contractor Id"
+            }
+          },
+          {
+            "name": "detected_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected From"
+            }
+          },
+          {
+            "name": "detected_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeatmapOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/contractor/requests": {
       "get": {
         "tags": [
@@ -7639,6 +7893,139 @@
           "version"
         ],
         "title": "HealthResponse"
+      },
+      "HeatFeature": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Feature",
+            "title": "Type",
+            "default": "Feature"
+          },
+          "geometry": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Geometry",
+            "description": "GeoJSON LineString или MultiLineString, [долгота, широта]"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/HeatProperties"
+          }
+        },
+        "type": "object",
+        "required": [
+          "geometry",
+          "properties"
+        ],
+        "title": "HeatFeature"
+      },
+      "HeatProperties": {
+        "properties": {
+          "street": {
+            "type": "string",
+            "title": "Street"
+          },
+          "street_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Street Id",
+            "description": "пусто, если улица собрана из нескольких кусков"
+          },
+          "segment_idx": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Idx",
+            "description": "номер участка 100 м; только на детальном уровне"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "заявок (ям) на этом отрезке"
+          },
+          "weight": {
+            "type": "number",
+            "title": "Weight",
+            "description": "большая яма — 1, маленькая — 0,5"
+          },
+          "per_100m": {
+            "type": "number",
+            "title": "Per 100M",
+            "description": "вес на 100 м дороги: по нему выбирается цвет"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Level"
+          }
+        },
+        "type": "object",
+        "required": [
+          "street",
+          "street_id",
+          "segment_idx",
+          "count",
+          "weight",
+          "per_100m",
+          "level"
+        ],
+        "title": "HeatProperties"
+      },
+      "HeatmapOut": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "FeatureCollection",
+            "title": "Type",
+            "default": "FeatureCollection"
+          },
+          "detail": {
+            "type": "string",
+            "enum": [
+              "street",
+              "piece",
+              "segment"
+            ],
+            "title": "Detail",
+            "description": "улица целиком (zoom ≤ 12), кусок улицы (13–15), участок 100 м (≥ 16)"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/HeatFeature"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "outside_streets": {
+            "type": "integer",
+            "title": "Outside Streets",
+            "description": "заявок в окне без улицы в 30 м: их видно только маркерами"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "features",
+          "outside_streets"
+        ],
+        "title": "HeatmapOut",
+        "description": "Тепловая карта по дорогам (REQ-052): GeoJSON для L.geoJSON(...)."
       },
       "HistoryRow": {
         "properties": {

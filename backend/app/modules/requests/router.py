@@ -21,6 +21,7 @@ from app.modules.requests.schemas import (
     DispatcherRequestOut,
     DispatcherRequestSummary,
     EventOut,
+    HeatmapOut,
     MapPoint,
     MergeRequest,
     NoteCreate,
@@ -269,6 +270,42 @@ def map_points(
         detected_to=detected_to,
     )
     return service.map_points(session, f, bbox)
+
+
+@router.get(
+    "/map/heatmap",
+    response_model=HeatmapOut,
+    tags=["dispatcher"],
+    summary="Тепловая карта по дорогам",
+)
+def map_heatmap(
+    user: DispatcherUser,
+    session: DbSession,
+    bbox: Annotated[
+        str, Query(description="запад,юг,восток,север", examples=["84.9,56.4,85.1,56.5"])
+    ],
+    zoom: Annotated[int, Query(ge=1, le=20, description="масштаб Leaflet map.getZoom()")] = 14,
+    status_: Annotated[list[StatusCode] | None, Query(alias="status")] = None,
+    defect_class: DefectClass | None = None,
+    district_id: int | None = None,
+    street_group: StreetGroup | None = None,
+    contractor_id: int | None = None,
+    detected_from: datetime | None = None,
+    detected_to: datetime | None = None,
+) -> HeatmapOut:
+    """Линии дорог с ямами, цвет — по весу ям на 100 м: low < 2 ≤ medium < 4 ≤ high < 7 ≤
+    critical. Большая яма — 1, маленькая — 0,5. Без status считаются неустранённые ямы
+    (на проверке, уточнение, принято, в работе). Фильтры — как у /map/points."""
+    f = RequestFilter.of(
+        status=status_,
+        defect_class=defect_class,
+        district_id=district_id,
+        street_group=street_group,
+        contractor_id=contractor_id,
+        detected_from=detected_from,
+        detected_to=detected_to,
+    )
+    return service.heatmap(session, f, bbox, zoom)
 
 
 # --- Подрядчик -----------------------------------------------------------------------

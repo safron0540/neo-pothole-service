@@ -4,11 +4,13 @@
 в заявку при подаче (снимок) и потом не зависят от справочников.
 """
 
+import json
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from geoalchemy2 import Geography, Geometry
-from sqlalchemy import cast, func, or_, select, text
+from sqlalchemy import case, cast, func, literal, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -26,7 +28,7 @@ from app.deps import Pagination
 from app.errors import ApiError
 from app.modules.auth.models import Citizen, User
 from app.modules.geo import service as geo
-from app.modules.geo.models import Contractor, District
+from app.modules.geo.models import Contractor, District, Street
 from app.modules.media import service as media
 from app.modules.media.models import Photo
 from app.modules.media.service import photo_url
@@ -43,6 +45,9 @@ from app.modules.requests.schemas import (
     DispatcherRequestOut,
     DispatcherRequestSummary,
     EventOut,
+    HeatFeature,
+    HeatmapOut,
+    HeatProperties,
     MapPoint,
     MergeRequest,
     NoteOut,
@@ -429,6 +434,117 @@ def map_points(session: Session, f: RequestFilter, bbox: str) -> list[MapPoint]:
         )
         for r, lat, lon, district, contractor in rows
     ]
+
+
+# --- Тепловая карта по дорогам -------------------------------------------------------------
+
+# Упрощение линий по уровню детальности, градусы: меньше точек — быстрее ответ
+SIMPLIFY = {"street": 0.00005, "piece": 0.00002, "segment": 0.0}
+
+
+def heatmap(session: Session, f: RequestFilter, bbox: str, zoom: int) -> HeatmapOut:
+    """Дороги, окрашенные по числу ям (REQ-052). Детальность зависит от масштаба:
+    улица целиком → кусок улицы из OSM → участок 100 м. Цвет — по весу ям на 100 м
+    дороги (rules.heat_level). По умолчанию считаются неустранённые ямы; слитые — нет."""
+    box = validators.parse_bbox(bbox)
+    if box is None:
+        raise ApiError(422, "invalid_bbox", "bbox: запад,юг,восток,север в градусах")
+    if not f.statuses:
+        f = replace(f, statuses=rules.ACTIVE_STATUSES)
+    now = datetime.now(UTC)
+    detail = rules.heat_detail(zoom)
+    envelope = cast(func.ST_MakeEnvelope(*box, 4326), Geography)
+    weight = case(*((Request.defect_class == c, w) for c, w in rules.HEAT_WEIGHTS.items()))
+    keys = [Request.street_id] + ([Request.segment_idx] if detail == "segment" else [])
+    counted = (
+        select(*keys, func.count().label("n"), func.sum(weight).label("w"))
+        .where(
+            *conditions(f, now), Request.street_id.is_not(None), Request.segment_idx.is_not(None)
+        )
+        .group_by(*keys)
+        .subquery()
+    )
+    line = cast(Street.geom, Geometry)
+    tolerance = SIMPLIFY[detail]
+
+    def as_json(geometry):
+        return func.ST_AsGeoJSON(
+            func.ST_Simplify(geometry, tolerance) if tolerance else geometry, 6
+        )
+
+    if detail == "segment":
+        length = func.ST_Length(Street.geom)
+        start = func.least(counted.c.segment_idx * rules.SEGMENT_LENGTH_M / length, 1)
+        end = func.least((counted.c.segment_idx + 1) * rules.SEGMENT_LENGTH_M / length, 1)
+        query = select(
+            Street.name,
+            Street.id,
+            counted.c.segment_idx,
+            counted.c.n,
+            counted.c.w,
+            func.least(length, rules.SEGMENT_LENGTH_M),
+            as_json(func.ST_LineSubstring(line, start, end)),
+        ).join(counted, counted.c.street_id == Street.id)
+    elif detail == "piece":
+        query = select(
+            Street.name,
+            Street.id,
+            literal(None),
+            counted.c.n,
+            counted.c.w,
+            func.ST_Length(Street.geom),
+            as_json(line),
+        ).join(counted, counted.c.street_id == Street.id)
+    else:
+        # Улица целиком: все её куски в окне, длина — сумма кусков, ямы — сумма по кускам
+        with_pits = select(Street.name).join(counted, counted.c.street_id == Street.id)
+        query = (
+            select(
+                Street.name,
+                literal(None),
+                literal(None),
+                func.coalesce(func.sum(counted.c.n), 0),
+                func.coalesce(func.sum(counted.c.w), 0),
+                func.sum(func.ST_Length(Street.geom)),
+                as_json(func.ST_LineMerge(func.ST_Collect(line))),
+            )
+            .outerjoin(counted, counted.c.street_id == Street.id)
+            .where(Street.name.in_(with_pits))
+            .group_by(Street.name)
+        )
+    features = []
+    for name, street_id, segment_idx, n, w, meters, geometry in session.execute(
+        query.where(Street.geom.op("&&")(envelope))
+    ):
+        per_100m = round(float(w) / max(float(meters), 1) * rules.SEGMENT_LENGTH_M, 2)
+        if detail == "segment":
+            per_100m = float(w)  # участок и есть 100 м: считаем ямы на нём как есть
+        level = rules.heat_level(per_100m)
+        if level is None or geometry is None:
+            continue
+        features.append(
+            HeatFeature(
+                geometry=json.loads(geometry),
+                properties=HeatProperties(
+                    street=name,
+                    street_id=street_id,
+                    segment_idx=segment_idx,
+                    count=int(n),
+                    weight=float(w),
+                    per_100m=per_100m,
+                    level=level,
+                ),
+            )
+        )
+    features.sort(key=lambda feature: feature.properties.per_100m)  # красные рисуются поверх
+    outside = session.scalar(
+        select(func.count())
+        .select_from(Request)
+        .where(
+            *conditions(f, now), Request.street_id.is_(None), Request.location.op("&&")(envelope)
+        )
+    )
+    return HeatmapOut(detail=detail, features=features, outside_streets=outside)
 
 
 # --- Внутренние заметки ------------------------------------------------------------------
