@@ -124,3 +124,25 @@ def hours_between(start: datetime | None, end: datetime | None) -> float | None:
     if start is None or end is None:
         return None
     return round((end - start).total_seconds() / 3600, 1)
+
+
+# Тепловая карта по дорогам: ям на 100 м дороги → уровень цвета. Пороги фиксированные,
+# чтобы «красный» не менялся от фильтра; меняются здесь, в одном месте [D]
+HEAT_LEVELS = ((7, "critical"), (4, "high"), (2, "medium"), (0, "low"))
+HEAT_WEIGHTS = {"big": 1.0, "small": 0.5}  # маленькая яма красит дорогу вдвое слабее
+
+
+def heat_level(per_100m: float) -> str | None:
+    """Уровень цвета участка; без ям — None (участок не рисуется)."""
+    if per_100m <= 0:
+        return None
+    return next(level for bound, level in HEAT_LEVELS if per_100m >= bound)
+
+
+def heat_detail(zoom: int) -> str:
+    """Детальность по масштабу Leaflet: улица целиком → кусок улицы → участок 100 м."""
+    if zoom <= 12:
+        return "street"
+    if zoom <= 15:
+        return "piece"
+    return "segment"

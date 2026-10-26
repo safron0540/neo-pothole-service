@@ -159,3 +159,35 @@ def test_req_066_done_on_time():
 def test_req_068_hours_between():
     assert rules.hours_between(NOW, NOW + timedelta(hours=26, minutes=30)) == 26.5
     assert rules.hours_between(None, NOW) is None
+
+
+@pytest.mark.parametrize(
+    ("value", "level"),
+    [
+        (0, None),
+        (0.5, "low"),
+        (1.9, "low"),
+        (2, "medium"),
+        (3.5, "medium"),
+        (4, "high"),
+        (7, "critical"),
+        (12, "critical"),
+    ],
+)
+def test_req_052_heat_level(value, level):
+    assert rules.heat_level(value) == level
+
+
+@pytest.mark.parametrize(
+    ("zoom", "detail"),
+    [
+        (10, "street"),
+        (12, "street"),
+        (13, "piece"),
+        (15, "piece"),
+        (16, "segment"),
+        (19, "segment"),
+    ],
+)
+def test_req_052_heat_detail(zoom, detail):
+    assert rules.heat_detail(zoom) == detail
