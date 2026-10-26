@@ -5227,6 +5227,461 @@
           }
         }
       }
+    },
+    "/api/v1/reports/count": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Отчёт: количество заявок",
+        "description": "Строки по районам, подрядчикам или группам улиц: всего, по статусам, выполнено,\nв срок, просрочено. Слитые дубликаты не считаются (В-18).",
+        "operationId": "count_report_api_v1_reports_count_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "district",
+                "contractor",
+                "street_group"
+              ],
+              "type": "string",
+              "default": "district",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "on_review",
+                      "accepted",
+                      "rejected",
+                      "needs_clarification",
+                      "in_progress",
+                      "done"
+                    ],
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "district_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "District Id"
+            }
+          },
+          {
+            "name": "street_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "А",
+                    "Б",
+                    "В",
+                    "Г",
+                    "Д",
+                    "Е"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Street Group"
+            }
+          },
+          {
+            "name": "defect_class",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "big",
+                    "small"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Defect Class"
+            }
+          },
+          {
+            "name": "contractor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Contractor Id"
+            }
+          },
+          {
+            "name": "detected_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected From"
+            }
+          },
+          {
+            "name": "detected_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CountReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/avg-time": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Отчёт: среднее время выполнения",
+        "description": "По выполненным заявкам: среднее, минимум и максимум часов от обнаружения до\nвыполнения, доля выполненных в срок.",
+        "operationId": "avg_time_report_api_v1_reports_avg_time_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "district",
+                "contractor",
+                "street_group"
+              ],
+              "type": "string",
+              "default": "district",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "district_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "District Id"
+            }
+          },
+          {
+            "name": "street_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "А",
+                    "Б",
+                    "В",
+                    "Г",
+                    "Д",
+                    "Е"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Street Group"
+            }
+          },
+          {
+            "name": "defect_class",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "big",
+                    "small"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Defect Class"
+            }
+          },
+          {
+            "name": "contractor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Contractor Id"
+            }
+          },
+          {
+            "name": "detected_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected From"
+            }
+          },
+          {
+            "name": "detected_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvgTimeReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5253,6 +5708,104 @@
           "phone"
         ],
         "title": "Applicant"
+      },
+      "AvgTimeReport": {
+        "properties": {
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "district",
+              "contractor",
+              "street_group"
+            ],
+            "title": "Group By"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AvgTimeRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_by",
+          "rows",
+          "generated_at"
+        ],
+        "title": "AvgTimeReport"
+      },
+      "AvgTimeRow": {
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/ReportKey"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "avg_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Hours",
+            "description": "от обнаружения до выполнения (REQ-068)"
+          },
+          "min_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Hours"
+          },
+          "max_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Hours"
+          },
+          "on_time_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Time Share",
+            "description": "доля выполненных в срок, 0…1"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "done",
+          "avg_hours",
+          "min_hours",
+          "max_hours",
+          "on_time_share"
+        ],
+        "title": "AvgTimeRow"
       },
       "Body_analyze_photo_api_v1_photos_analyze_post": {
         "properties": {
@@ -5759,6 +6312,94 @@
         },
         "type": "object",
         "title": "ContractorUpdate"
+      },
+      "CountReport": {
+        "properties": {
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "district",
+              "contractor",
+              "street_group"
+            ],
+            "title": "Group By"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CountRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_by",
+          "rows",
+          "total",
+          "generated_at"
+        ],
+        "title": "CountReport"
+      },
+      "CountRow": {
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/ReportKey"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "enum": [
+                "on_review",
+                "accepted",
+                "rejected",
+                "needs_clarification",
+                "in_progress",
+                "done"
+              ]
+            },
+            "type": "object",
+            "title": "By Status"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "done_on_time": {
+            "type": "integer",
+            "title": "Done On Time",
+            "description": "выполнено не позже плановой даты [D]"
+          },
+          "overdue": {
+            "type": "integer",
+            "title": "Overdue",
+            "description": "сейчас в работе и срок прошёл"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "total",
+          "by_status",
+          "done",
+          "done_on_time",
+          "overdue"
+        ],
+        "title": "CountRow"
       },
       "DeviceTokenIn": {
         "properties": {
@@ -6993,6 +7634,33 @@
         ],
         "title": "RefreshRequest"
       },
+      "ReportKey": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "id района или подрядчика; у группы улиц пусто"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ReportKey",
+        "description": "Строка разреза: район, подрядчик или группа улиц. Без значения — «Не указан»."
+      },
       "RequestCreate": {
         "properties": {
           "client_request_id": {
@@ -7690,6 +8358,10 @@
     {
       "name": "admin",
       "description": "Справочники и сотрудники (диспетчер)"
+    },
+    {
+      "name": "reports",
+      "description": "Отчёты, плановый ремонт, рейтинг (диспетчер)"
     }
   ]
 }
