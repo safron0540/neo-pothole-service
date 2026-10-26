@@ -5682,6 +5682,276 @@
           }
         }
       }
+    },
+    "/api/v1/planned-repairs": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Предложения планового ремонта",
+        "description": "По умолчанию только открытые. Предложение открывается, когда отклонённых малых ям\nна участке 100 м больше порога группы улицы, и закрывается само, когда их не больше [D].",
+        "operationId": "list_planned_repairs_api_v1_planned_repairs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "open",
+                    "closed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "open",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "district_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "District Id"
+            }
+          },
+          {
+            "name": "street_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "А",
+                    "Б",
+                    "В",
+                    "Г",
+                    "Д",
+                    "Е"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Street Group"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PlannedRepairOut_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/planned-repairs/{proposal_id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Предложение и его заявки",
+        "operationId": "get_planned_repair_api_v1_planned_repairs__proposal_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannedRepairDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7412,6 +7682,37 @@
         ],
         "title": "Page[DispatcherRequestSummary]"
       },
+      "Page_PlannedRepairOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedRepairOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[PlannedRepairOut]"
+      },
       "Page_RequestSummary_": {
         "properties": {
           "items": {
@@ -7579,6 +7880,205 @@
         ],
         "title": "PhotoAnalysis",
         "description": "Ответ POST /photos/analyze. Если ямы нет — 422 с кодом no_pit_detected."
+      },
+      "PlannedRepairDetail": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "street": {
+            "$ref": "#/components/schemas/Ref"
+          },
+          "district": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "street_group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "А",
+                  "Б",
+                  "В",
+                  "Г",
+                  "Д",
+                  "Е"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Street Group",
+            "description": "текущая группа улицы (В-14)"
+          },
+          "segment_idx": {
+            "type": "integer",
+            "title": "Segment Idx",
+            "description": "номер участка 100 м от начала линии улицы"
+          },
+          "segment": {
+            "$ref": "#/components/schemas/GeoLineString",
+            "description": "сам участок для карты, [долгота, широта]"
+          },
+          "center": {
+            "$ref": "#/components/schemas/Point"
+          },
+          "pits_count": {
+            "type": "integer",
+            "title": "Pits Count",
+            "description": "отклонённых малых ям с причиной small_pit (В-15)"
+          },
+          "threshold": {
+            "type": "integer",
+            "title": "Threshold",
+            "description": "порог группы: открыто, если ям больше порога"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/RequestSummary"
+            },
+            "type": "array",
+            "title": "Requests",
+            "description": "заявки, из которых сложилось предложение"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "street",
+          "district",
+          "street_group",
+          "segment_idx",
+          "segment",
+          "center",
+          "pits_count",
+          "threshold",
+          "status",
+          "created_at",
+          "updated_at",
+          "requests"
+        ],
+        "title": "PlannedRepairDetail"
+      },
+      "PlannedRepairOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "street": {
+            "$ref": "#/components/schemas/Ref"
+          },
+          "district": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "street_group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "А",
+                  "Б",
+                  "В",
+                  "Г",
+                  "Д",
+                  "Е"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Street Group",
+            "description": "текущая группа улицы (В-14)"
+          },
+          "segment_idx": {
+            "type": "integer",
+            "title": "Segment Idx",
+            "description": "номер участка 100 м от начала линии улицы"
+          },
+          "segment": {
+            "$ref": "#/components/schemas/GeoLineString",
+            "description": "сам участок для карты, [долгота, широта]"
+          },
+          "center": {
+            "$ref": "#/components/schemas/Point"
+          },
+          "pits_count": {
+            "type": "integer",
+            "title": "Pits Count",
+            "description": "отклонённых малых ям с причиной small_pit (В-15)"
+          },
+          "threshold": {
+            "type": "integer",
+            "title": "Threshold",
+            "description": "порог группы: открыто, если ям больше порога"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "street",
+          "district",
+          "street_group",
+          "segment_idx",
+          "segment",
+          "center",
+          "pits_count",
+          "threshold",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PlannedRepairOut"
       },
       "Point": {
         "properties": {

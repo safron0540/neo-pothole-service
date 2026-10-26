@@ -10,6 +10,7 @@ from app.modules.admin.router import router as admin_router
 from app.modules.auth.router import router as auth_router
 from app.modules.media.router import router as media_router
 from app.modules.notifications.router import router as notifications_router
+from app.modules.planned_repair.router import router as planned_repair_router
 from app.modules.reports.router import router as reports_router
 from app.modules.requests.router import router as requests_router
 
@@ -69,6 +70,7 @@ for module_router in (
     notifications_router,
     admin_router,
     reports_router,
+    planned_repair_router,
 ):
     router.include_router(module_router)
 
