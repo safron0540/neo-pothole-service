@@ -219,8 +219,8 @@ def remove_duplicate_flag(
     tags=["dispatcher"],
     summary="Внутренние заметки",
 )
-def list_notes(request_id: int, token: Token) -> list[NoteOut]:
-    not_implemented()
+def list_notes(request_id: int, user: DispatcherUser, session: DbSession) -> list[NoteOut]:
+    return service.list_notes(session, request_id)
 
 
 @router.post(
@@ -230,8 +230,11 @@ def list_notes(request_id: int, token: Token) -> list[NoteOut]:
     tags=["dispatcher"],
     summary="Добавить заметку",
 )
-def add_note(request_id: int, body: NoteCreate, token: Token) -> NoteOut:
-    not_implemented()
+def add_note(
+    request_id: int, body: NoteCreate, user: DispatcherUser, session: DbSession
+) -> NoteOut:
+    """Заметку видят только диспетчеры; в истории появляется событие note_added."""
+    return service.add_note(session, user.id, request_id, body.text)
 
 
 @router.get(

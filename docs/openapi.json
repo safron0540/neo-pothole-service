@@ -2364,6 +2364,7 @@
           "dispatcher"
         ],
         "summary": "Добавить заметку",
+        "description": "Заметку видят только диспетчеры; в истории появляется событие note_added.",
         "operationId": "add_note_api_v1_requests__request_id__notes_post",
         "security": [
           {

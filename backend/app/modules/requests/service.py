@@ -31,7 +31,7 @@ from app.modules.media.models import Photo
 from app.modules.media.service import photo_url
 from app.modules.notifications.models import Notification
 from app.modules.requests.filters import NEWEST_ORDER, PRIORITY_ORDER, RequestFilter, conditions
-from app.modules.requests.models import Request, RequestEvent
+from app.modules.requests.models import InternalNote, Request, RequestEvent
 from app.modules.requests.schemas import (
     Applicant,
     CitizenRequestOut,
@@ -41,6 +41,7 @@ from app.modules.requests.schemas import (
     DispatcherRequestOut,
     DispatcherRequestSummary,
     EventOut,
+    NoteOut,
     RequestCreate,
     RequestSummary,
     StatusChange,
@@ -308,6 +309,42 @@ def request_events(session: Session, request_id: int) -> list[EventOut]:
     if session.get(Request, request_id) is None:
         raise not_found()
     return events_of(session, request_id)
+
+
+# --- Внутренние заметки ------------------------------------------------------------------
+
+
+def _note_out(note: InternalNote, author: User) -> NoteOut:
+    return NoteOut(
+        id=note.id,
+        author=Ref(id=author.id, name=actor_name(author)),
+        text=note.text,
+        created_at=note.created_at,
+    )
+
+
+def list_notes(session: Session, request_id: int) -> list[NoteOut]:
+    """Заметки видит только диспетчер (REQ-060): у гражданина и подрядчика их нет в схемах."""
+    if session.get(Request, request_id) is None:
+        raise not_found()
+    rows = session.execute(
+        select(InternalNote, User)
+        .join(User, User.id == InternalNote.author_id)
+        .where(InternalNote.request_id == request_id)
+        .order_by(InternalNote.created_at, InternalNote.id)
+    )
+    return [_note_out(note, author) for note, author in rows]
+
+
+def add_note(session: Session, author_id: int, request_id: int, text_: str) -> NoteOut:
+    if session.get(Request, request_id) is None:
+        raise not_found()
+    note = InternalNote(request_id=request_id, author_id=author_id, text=text_.strip())
+    session.add(note)
+    session.flush()
+    add_event(session, request_id, "note_added", author_id, note_id=note.id)
+    session.commit()
+    return _note_out(note, session.get(User, author_id))
 
 
 # --- Подрядчик ----------------------------------------------------------------------------
