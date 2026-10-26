@@ -2472,7 +2472,7 @@
           "dispatcher"
         ],
         "summary": "Заявки на карте",
-        "description": "Те же фильтры, что у /requests (отчёт = карта); только видимая область.\nbbox в порядке Leaflet map.getBounds().toBBoxString(): запад,юг,восток,север.",
+        "description": "Те же фильтры, что у /requests (отчёт = карта); только видимая область, до 2000 точек.\nbbox в порядке Leaflet map.getBounds().toBBoxString(): запад,юг,восток,север.",
         "operationId": "map_points_api_v1_map_points_get",
         "security": [
           {

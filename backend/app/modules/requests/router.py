@@ -241,7 +241,8 @@ def add_note(
     "/map/points", response_model=list[MapPoint], tags=["dispatcher"], summary="Заявки на карте"
 )
 def map_points(
-    token: Token,
+    user: DispatcherUser,
+    session: DbSession,
     bbox: Annotated[
         str, Query(description="запад,юг,восток,север", examples=["84.9,56.4,85.1,56.5"])
     ],
@@ -253,9 +254,18 @@ def map_points(
     detected_from: datetime | None = None,
     detected_to: datetime | None = None,
 ) -> list[MapPoint]:
-    """Те же фильтры, что у /requests (отчёт = карта); только видимая область.
+    """Те же фильтры, что у /requests (отчёт = карта); только видимая область, до 2000 точек.
     bbox в порядке Leaflet map.getBounds().toBBoxString(): запад,юг,восток,север."""
-    not_implemented()
+    f = RequestFilter.of(
+        status=status_,
+        defect_class=defect_class,
+        district_id=district_id,
+        street_group=street_group,
+        contractor_id=contractor_id,
+        detected_from=detected_from,
+        detected_to=detected_to,
+    )
+    return service.map_points(session, f, bbox)
 
 
 # --- Подрядчик -----------------------------------------------------------------------

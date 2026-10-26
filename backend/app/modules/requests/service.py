@@ -7,11 +7,12 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, or_, select, text
+from geoalchemy2 import Geography, Geometry
+from sqlalchemy import cast, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core import rules
+from app.core import rules, validators
 from app.core.statuses import (
     ACCEPTED,
     DONE,
@@ -41,6 +42,7 @@ from app.modules.requests.schemas import (
     DispatcherRequestOut,
     DispatcherRequestSummary,
     EventOut,
+    MapPoint,
     NoteOut,
     RequestCreate,
     RequestSummary,
@@ -309,6 +311,46 @@ def request_events(session: Session, request_id: int) -> list[EventOut]:
     if session.get(Request, request_id) is None:
         raise not_found()
     return events_of(session, request_id)
+
+
+# --- Карта ------------------------------------------------------------------------------
+
+MAP_LIMIT = 2000  # больше маркеров в окне не рисуем: при отдалении веб группирует их
+
+
+def map_points(session: Session, f: RequestFilter, bbox: str) -> list[MapPoint]:
+    """Заявки в видимой области (REQ-048): те же фильтры, что у списка (REQ-067)."""
+    box = validators.parse_bbox(bbox)
+    if box is None:
+        raise ApiError(422, "invalid_bbox", "bbox: запад,юг,восток,север в градусах")
+    now = datetime.now(UTC)
+    point = cast(Request.location, Geometry)
+    envelope = cast(func.ST_MakeEnvelope(*box, 4326), Geography)
+    rows = session.execute(
+        select(Request, func.ST_Y(point), func.ST_X(point), District.name, Contractor.name)
+        .outerjoin(District, District.id == Request.district_id)
+        .outerjoin(Contractor, Contractor.id == Request.contractor_id)
+        .where(Request.location.op("&&")(envelope), *conditions(f, now))
+        .order_by(*PRIORITY_ORDER)
+        .limit(MAP_LIMIT)
+    )
+    return [
+        MapPoint(
+            id=r.id,
+            lat=lat,
+            lon=lon,
+            status=r.status,
+            defect_class=r.defect_class,
+            is_overdue=rules.is_overdue(r.status, r.planned_due_at, now),
+            address=r.address,
+            street_group=r.street_group,
+            district=Ref(id=r.district_id, name=district) if district else None,
+            contractor=Ref(id=r.contractor_id, name=contractor) if contractor else None,
+            detected_at=r.detected_at,
+            planned_due_at=r.planned_due_at,
+        )
+        for r, lat, lon, district, contractor in rows
+    ]
 
 
 # --- Внутренние заметки ------------------------------------------------------------------
