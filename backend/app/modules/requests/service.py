@@ -10,7 +10,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from geoalchemy2 import Geography, Geometry
-from sqlalchemy import case, cast, func, literal, or_, select, text
+from sqlalchemy import case, cast, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -402,15 +402,24 @@ MAP_LIMIT = 2000  # больше маркеров в окне не рисуем:
 
 
 def map_points(session: Session, f: RequestFilter, bbox: str) -> list[MapPoint]:
-    """Заявки в видимой области (REQ-048): те же фильтры, что у списка (REQ-067)."""
+    """Заявки в видимой области (REQ-048): те же фильтры, что у списка (REQ-067).
+
+    Маркер ставится на дорогу: в ближайшую точку найденной улицы (она не дальше 30 м).
+    Настоящая GPS-точка заявки — в карточке (location).
+    """
     box = validators.parse_bbox(bbox)
     if box is None:
         raise ApiError(422, "invalid_bbox", "bbox: запад,юг,восток,север в градусах")
     now = datetime.now(UTC)
-    point = cast(Request.location, Geometry)
+    gps = cast(Request.location, Geometry)
+    point = case(
+        (Street.id.is_not(None), func.ST_ClosestPoint(cast(Street.geom, Geometry), gps)),
+        else_=gps,
+    )
     envelope = cast(func.ST_MakeEnvelope(*box, 4326), Geography)
     rows = session.execute(
         select(Request, func.ST_Y(point), func.ST_X(point), District.name, Contractor.name)
+        .outerjoin(Street, Street.id == Request.street_id)
         .outerjoin(District, District.id == Request.district_id)
         .outerjoin(Contractor, Contractor.id == Request.contractor_id)
         .where(Request.location.op("&&")(envelope), *conditions(f, now))
@@ -438,14 +447,52 @@ def map_points(session: Session, f: RequestFilter, bbox: str) -> list[MapPoint]:
 
 # --- Тепловая карта по дорогам -------------------------------------------------------------
 
-# Упрощение линий по уровню детальности, градусы: меньше точек — быстрее ответ
-SIMPLIFY = {"street": 0.00005, "piece": 0.00002, "segment": 0.0}
+# Кусочки дорог рядом с ямами и их «тепло»: сумма весов ям, затухающая с расстоянием
+# exp(−d²/2σ²). Тепло считается по расстоянию до ямы, а не по номеру куска улицы, поэтому
+# на стыках кусков OSM и на перекрёстках линия не рвётся.
+HEAT_SQL = text(
+    """
+    WITH pits AS (
+        SELECT ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography AS location, w
+        FROM unnest(CAST(:lons AS float8[]), CAST(:lats AS float8[]), CAST(:ws AS float8[]))
+            AS p(lon, lat, w)
+    ), near AS (
+        SELECT s.id, s.name, s.geom, ST_Length(s.geom) AS len
+        FROM streets s
+        WHERE s.geom && ST_MakeEnvelope(:w, :s, :e, :n, 4326)::geography
+          AND EXISTS (SELECT 1 FROM pits p WHERE ST_DWithin(s.geom, p.location, :reach))
+    ), pieces AS (
+        SELECT near.id, near.name, g.i,
+               ST_LineSubstring(near.geom::geometry,
+                                LEAST(g.i * :step / near.len, 1),
+                                LEAST((g.i + 1) * :step / near.len, 1)) AS piece
+        FROM near, generate_series(0, GREATEST(CEIL(near.len / :step)::int - 1, 0)) AS g(i)
+    ), heat AS (
+        SELECT pieces.id, pieces.name, pieces.i, pieces.piece,
+               SUM(p.w * EXP(-POWER(ST_Distance(
+                   ST_LineInterpolatePoint(pieces.piece, 0.5)::geography, p.location), 2)
+                   / (2 * :sigma * :sigma))) AS kernel,
+               COUNT(*) FILTER (WHERE ST_DWithin(
+                   ST_LineInterpolatePoint(pieces.piece, 0.5)::geography, p.location, :sigma))
+                   AS n,
+               COALESCE(SUM(p.w) FILTER (WHERE ST_DWithin(
+                   ST_LineInterpolatePoint(pieces.piece, 0.5)::geography, p.location, :sigma)),
+                   0) AS weight
+        FROM pieces
+        JOIN pits p
+          ON ST_DWithin(ST_LineInterpolatePoint(pieces.piece, 0.5)::geography, p.location, :reach)
+        GROUP BY pieces.id, pieces.name, pieces.i, pieces.piece
+    )
+    SELECT id, name, i, ST_AsGeoJSON(piece, 6) AS geometry, kernel, n, weight
+    FROM heat
+    """
+)
 
 
 def heatmap(session: Session, f: RequestFilter, bbox: str, zoom: int) -> HeatmapOut:
-    """Дороги, окрашенные по числу ям (REQ-052). Детальность зависит от масштаба:
-    улица целиком → кусок улицы из OSM → участок 100 м. Цвет — по весу ям на 100 м
-    дороги (rules.heat_level). По умолчанию считаются неустранённые ямы; слитые — нет."""
+    """Тепловая карта дорог (REQ-052): каждая яма «греет» дорогу вокруг себя, цвет
+    кусочка — по весу ям на 100 м (rules.heat_density, rules.heat_level). Масштаб задаёт
+    длину кусочков и ширину пятна. По умолчанию считаются неустранённые ямы; слитые — нет."""
     box = validators.parse_bbox(bbox)
     if box is None:
         raise ApiError(422, "invalid_bbox", "bbox: запад,юг,восток,север в градусах")
@@ -453,97 +500,67 @@ def heatmap(session: Session, f: RequestFilter, bbox: str, zoom: int) -> Heatmap
         f = replace(f, statuses=rules.ACTIVE_STATUSES)
     now = datetime.now(UTC)
     detail = rules.heat_detail(zoom)
-    envelope = cast(func.ST_MakeEnvelope(*box, 4326), Geography)
-    weight = case(*((Request.defect_class == c, w) for c, w in rules.HEAT_WEIGHTS.items()))
-    keys = [Request.street_id] + ([Request.segment_idx] if detail == "segment" else [])
-    counted = (
-        select(*keys, func.count().label("n"), func.sum(weight).label("w"))
-        .where(
-            *conditions(f, now), Request.street_id.is_not(None), Request.segment_idx.is_not(None)
-        )
-        .group_by(*keys)
-        .subquery()
+    step, sigma = rules.HEAT_STEP_M[detail], rules.HEAT_SIGMA_M[detail]
+    reach = 3 * sigma  # дальше вклад ямы меньше 1 %
+    # Ямы чуть за краем окна тоже греют видимые дороги
+    margin = reach / 60000  # ≈ градусы на широте Томска
+    west, south, east, north = box
+    wider = cast(
+        func.ST_MakeEnvelope(west - margin, south - margin, east + margin, north + margin, 4326),
+        Geography,
     )
-    line = cast(Street.geom, Geometry)
-    tolerance = SIMPLIFY[detail]
-
-    def as_json(geometry):
-        return func.ST_AsGeoJSON(
-            func.ST_Simplify(geometry, tolerance) if tolerance else geometry, 6
+    point = cast(Request.location, Geometry)
+    weight = case(*((Request.defect_class == c, w) for c, w in rules.HEAT_WEIGHTS.items()))
+    pits = session.execute(
+        select(func.ST_X(point), func.ST_Y(point), weight, Request.street_id).where(
+            *conditions(f, now), Request.location.op("&&")(wider)
         )
-
-    if detail == "segment":
-        length = func.ST_Length(Street.geom)
-        start = func.least(counted.c.segment_idx * rules.SEGMENT_LENGTH_M / length, 1)
-        end = func.least((counted.c.segment_idx + 1) * rules.SEGMENT_LENGTH_M / length, 1)
-        query = select(
-            Street.name,
-            Street.id,
-            counted.c.segment_idx,
-            counted.c.n,
-            counted.c.w,
-            func.least(length, rules.SEGMENT_LENGTH_M),
-            as_json(func.ST_LineSubstring(line, start, end)),
-        ).join(counted, counted.c.street_id == Street.id)
-    elif detail == "piece":
-        query = select(
-            Street.name,
-            Street.id,
-            literal(None),
-            counted.c.n,
-            counted.c.w,
-            func.ST_Length(Street.geom),
-            as_json(line),
-        ).join(counted, counted.c.street_id == Street.id)
-    else:
-        # Улица целиком: все её куски в окне, длина — сумма кусков, ямы — сумма по кускам
-        with_pits = select(Street.name).join(counted, counted.c.street_id == Street.id)
-        query = (
-            select(
-                Street.name,
-                literal(None),
-                literal(None),
-                func.coalesce(func.sum(counted.c.n), 0),
-                func.coalesce(func.sum(counted.c.w), 0),
-                func.sum(func.ST_Length(Street.geom)),
-                as_json(func.ST_LineMerge(func.ST_Collect(line))),
+    ).all()
+    features: list[HeatFeature] = []
+    if pits:
+        rows = session.execute(
+            HEAT_SQL,
+            {
+                "lons": [p[0] for p in pits],
+                "lats": [p[1] for p in pits],
+                "ws": [float(p[2]) for p in pits],
+                "w": west,
+                "s": south,
+                "e": east,
+                "n": north,
+                "reach": reach,
+                "step": step,
+                "sigma": sigma,
+            },
+        )
+        for street_id, name, i, geometry, kernel, n, total in rows:
+            per_100m = round(rules.heat_density(float(kernel), sigma), 2)
+            level = rules.heat_level(per_100m)
+            if level is None:
+                continue
+            features.append(
+                HeatFeature(
+                    geometry=json.loads(geometry),
+                    properties=HeatProperties(
+                        street=name,
+                        street_id=street_id,
+                        segment_idx=i * step // rules.SEGMENT_LENGTH_M,
+                        count=int(n),
+                        weight=float(total),
+                        per_100m=per_100m,
+                        level=level,
+                    ),
+                )
             )
-            .outerjoin(counted, counted.c.street_id == Street.id)
-            .where(Street.name.in_(with_pits))
-            .group_by(Street.name)
-        )
-    features = []
-    for name, street_id, segment_idx, n, w, meters, geometry in session.execute(
-        query.where(Street.geom.op("&&")(envelope))
-    ):
-        # Короткий кусок OSM (15–30 м) с одной ямой не должен краснеть: длина не меньше 100 м
-        meters = max(float(meters), rules.SEGMENT_LENGTH_M)
-        per_100m = round(float(w) / meters * rules.SEGMENT_LENGTH_M, 2)
-        if detail == "segment":
-            per_100m = float(w)  # участок и есть 100 м: считаем ямы на нём как есть
-        level = rules.heat_level(per_100m)
-        if level is None or geometry is None:
-            continue
-        features.append(
-            HeatFeature(
-                geometry=json.loads(geometry),
-                properties=HeatProperties(
-                    street=name,
-                    street_id=street_id,
-                    segment_idx=segment_idx,
-                    count=int(n),
-                    weight=float(w),
-                    per_100m=per_100m,
-                    level=level,
-                ),
-            )
-        )
-    features.sort(key=lambda feature: feature.properties.per_100m)  # красные рисуются поверх
+    features.sort(key=lambda feature: feature.properties.per_100m)  # горячие рисуются поверх
+    in_window = cast(func.ST_MakeEnvelope(*box, 4326), Geography)
     outside = session.scalar(
         select(func.count())
         .select_from(Request)
         .where(
-            *conditions(f, now), Request.street_id.is_(None), Request.location.op("&&")(envelope)
+            *conditions(f, now),
+            Request.street_id.is_(None),
+            Request.location.op("&&")(in_window),
         )
     )
     return HeatmapOut(detail=detail, features=features, outside_streets=outside)

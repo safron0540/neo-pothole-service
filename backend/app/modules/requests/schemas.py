@@ -150,7 +150,7 @@ class MapPoint(BaseModel):
     """Маркер карты и поля для всплывающей подсказки; полная карточка — /requests/{id}."""
 
     id: int
-    lat: float
+    lat: float = Field(description="точка на дороге: ближайшая к GPS точка найденной улицы")
     lon: float
     status: StatusCode
     defect_class: DefectClass

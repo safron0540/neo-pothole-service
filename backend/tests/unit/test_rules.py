@@ -191,3 +191,9 @@ def test_req_052_heat_level(value, level):
 )
 def test_req_052_heat_detail(zoom, detail):
     assert rules.heat_detail(zoom) == detail
+
+
+def test_req_052_heat_density_one_pit():
+    """Одна большая яма в центре пятна σ = 40 м даёт ≈ 1 яму на 100 м."""
+    assert rules.heat_density(1.0, 40) == pytest.approx(0.997, abs=0.01)
+    assert rules.heat_density(3.0, 40) == pytest.approx(2.99, abs=0.02)  # три ямы — medium

@@ -68,3 +68,17 @@ def test_map_only_for_dispatcher(client, session):
         headers = login(client, add_user(session, role))
         response = client.get(f"{API}/map/points", params={"bbox": BBOX}, headers=headers)
         assert response.status_code == 403
+
+
+def test_marker_snapped_to_road(client, session, dispatcher, district):
+    """GPS в 20 м от улицы (на доме): маркер ставится на дорогу, в карточке — GPS."""
+    from tests.integration.conftest import add_street
+
+    street = add_street(session)
+    request_id = add_request(session, 60.00018, 100.005, district_id=district, street_id=street)
+    point = next(
+        p for p in points(client, dispatcher, district_id=district) if p["id"] == request_id
+    )
+    assert point["lat"] == pytest.approx(60.0, abs=0.00002)  # линия улицы идёт по 60° с. ш.
+    card = client.get(f"{API}/requests/{request_id}", headers=dispatcher).json()
+    assert card["location"]["lat"] == pytest.approx(60.00018)
