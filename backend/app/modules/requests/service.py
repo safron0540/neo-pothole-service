@@ -43,6 +43,7 @@ from app.modules.requests.schemas import (
     DispatcherRequestSummary,
     EventOut,
     MapPoint,
+    MergeRequest,
     NoteOut,
     RequestCreate,
     RequestSummary,
@@ -174,43 +175,57 @@ def change_status(
     actor_role: str,
     comment: str | None = None,
     reject_reason: str | None = None,
+    follow: bool = False,
 ) -> None:
     """Единственное место, где меняется статус (железное правило 1).
 
     Строка уже заблокирована lock(), version проверил вызывающий сценарий. Здесь —
     переход и роль, событие и уведомление; «Принято» с назначенным подрядчиком сразу
-    переходит в «В работе» (REQ-043, В-6: два уведомления). Коммит делает сценарий.
+    переходит в «В работе» (REQ-043, В-6: два уведомления). Слитые заявки повторяют
+    статус основной (follow=True): таблица переходов к ним не применяется (REQ-059).
+    Коммит делает сценарий.
     """
     current = request.status
-    if not rules.is_transition(current, target):
+    if follow:
+        if current == target:
+            return
+    elif not rules.is_transition(current, target):
         raise ApiError(
             409,
             "transition_not_allowed",
             f"Нельзя перевести заявку из «{status_label(current)}» в «{status_label(target)}»",
         )
-    if not rules.can_transition(current, target, actor_role):
+    elif not rules.can_transition(current, target, actor_role):
         raise ApiError(403, "forbidden", "Этот переход выполняет другая роль")
-    if target == REJECTED and not (comment and comment.strip() and reject_reason):
+    elif target == REJECTED and not (comment and comment.strip() and reject_reason):
         raise ApiError(422, "reject_reason_required", "Укажите причину отклонения и комментарий")
-    if target == ACCEPTED and request.planned_due_at is None:
+    elif target == ACCEPTED and request.planned_due_at is None:
         raise ApiError(
             409, "street_group_required", "Укажите группу улицы: без неё нет срока устранения"
         )
 
     request.status = target
     request.version += 1
-    if target in (ACCEPTED, REJECTED, NEEDS_CLARIFICATION):
+    if target in (ACCEPTED, REJECTED, NEEDS_CLARIFICATION) and not follow:
         request.decision_comment = comment
         request.reject_reason = reject_reason if target == REJECTED else None
     session.flush()
     payload = {"from": current, "to": target}
     if comment:
         payload["comment"] = comment
-    if target == REJECTED:
+    if target == REJECTED and not follow:
         payload["reject_reason"] = reject_reason
+    if follow:
+        payload["main_id"] = request.merged_into_id
     event = add_event(session, request.id, "status_changed", actor_id, **payload)
     notify_author(session, request, event)
+    if follow:
+        return
 
+    for merged in session.scalars(
+        select(Request).where(Request.merged_into_id == request.id).with_for_update()
+    ):
+        change_status(session, merged, target, actor_id, actor_role, follow=True)
     if target == ACCEPTED and request.contractor_id is not None:
         change_status(session, request, IN_PROGRESS, None, rules.SYSTEM)
 
@@ -224,6 +239,65 @@ def dispatcher_change_status(
     change_status(
         session, request, body.to, actor_id, "dispatcher", body.comment, body.reject_reason
     )
+    session.commit()
+    return dispatcher_card(session, request_id)
+
+
+# --- Дубликаты -------------------------------------------------------------------------
+
+
+def merge(
+    session: Session, actor_id: int, request_id: int, body: MergeRequest
+) -> DispatcherRequestOut:
+    """Слить заявку request_id в основную into_id (REQ-059).
+
+    Глубина всегда 1: в слитую нельзя слить, а слитые в request_id переходят к основной.
+    Счётчик дубликатов основной растёт, поэтому растёт и её приоритет (REQ-045).
+    """
+    if request_id == body.into_id:
+        raise ApiError(422, "merge_into_itself", "Заявку нельзя слить саму в себя")
+    # Блокируем обе строки по возрастанию id: два встречных слияния не зависнут
+    locked = {r_id: lock(session, r_id) for r_id in sorted((request_id, body.into_id))}
+    request, main = locked[request_id], locked[body.into_id]
+    check_version(request, body.version)
+    if request.merged_into_id is not None:
+        raise ApiError(409, "already_merged", "Заявка уже слита с другой")
+    if main.merged_into_id is not None:
+        raise ApiError(409, "main_is_merged", "Основная заявка сама слита: выберите её основную")
+    if request.status == DONE:
+        raise ApiError(409, "request_closed", "Выполненную заявку слить нельзя")
+
+    children = session.scalars(
+        select(Request).where(Request.merged_into_id == request.id).with_for_update()
+    ).all()
+    for merged in (request, *children):
+        merged.merged_into_id = main.id
+        merged.duplicate_of_id = None
+        merged.version += 1
+        add_event(session, merged.id, "merged", actor_id, into_id=main.id)
+    request.duplicates_count = 0
+    main.duplicates_count += 1 + len(children)
+    main.version += 1
+    add_event(session, main.id, "merged", actor_id, merged_id=request.id)
+    session.flush()
+    for merged in (request, *children):
+        change_status(session, merged, main.status, actor_id, "dispatcher", follow=True)
+    session.commit()
+    return dispatcher_card(session, request_id)
+
+
+def remove_duplicate_flag(
+    session: Session, actor_id: int, request_id: int, version: int
+) -> DispatcherRequestOut:
+    """Пометка «возможный дубликат» оказалась ложной: снимаем её (REQ-044)."""
+    request = lock(session, request_id)
+    check_version(request, version)
+    if request.duplicate_of_id is not None:
+        add_event(
+            session, request.id, "duplicate_flag_removed", actor_id, was=request.duplicate_of_id
+        )
+        request.duplicate_of_id = None
+        request.version += 1
     session.commit()
     return dispatcher_card(session, request_id)
 
