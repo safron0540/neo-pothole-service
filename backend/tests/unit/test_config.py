@@ -31,3 +31,18 @@ def test_prod_requires_real_jwt_secret(monkeypatch):
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_prod_rejects_short_jwt_secret(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    monkeypatch.setenv("JWT_SECRET", "short-secret")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_prod_accepts_long_secret(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    monkeypatch.setenv("JWT_SECRET", "x" * 32)
+
+    assert Settings(_env_file=None).environment == "prod"

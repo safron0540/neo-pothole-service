@@ -52,9 +52,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _secret_is_set_in_prod(self) -> "Settings":
-        # На сервере нельзя случайно запуститься с секретом из примера
-        if self.environment == "prod" and self.jwt_secret == DEV_JWT_SECRET:
-            raise ValueError("JWT_SECRET должен быть задан для environment=prod")
+        # На сервере нельзя случайно запуститься с секретом из примера или коротким: им
+        # подписаны токены и ссылки на фото, подобранный секрет открывает всё
+        if self.environment == "prod" and (
+            self.jwt_secret == DEV_JWT_SECRET or len(self.jwt_secret) < 32
+        ):
+            raise ValueError("JWT_SECRET для environment=prod: свой, не короче 32 символов")
         return self
 
 

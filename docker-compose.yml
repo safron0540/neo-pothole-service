@@ -31,6 +31,8 @@ services:
       # Внутри сети compose база доступна по имени сервиса db
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-potholes}
       ML_URL: http://ml_service:8001
+      # Без ENVIRONMENT в .env считаем стенд боевым: с JWT_SECRET из примера API не запустится
+      ENVIRONMENT: ${ENVIRONMENT:-prod}
       # Фото через nginx; при прямом обращении к :8000 тело фото будет пустым
       PHOTO_ACCEL_PREFIX: /_photos/
     depends_on:
