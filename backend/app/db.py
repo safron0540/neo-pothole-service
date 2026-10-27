@@ -21,7 +21,11 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
-engine = create_engine(get_settings().database_url, pool_pre_ping=True)
+# JIT PostgreSQL выключен: тяжёлые на вид запросы (тепловая карта) он компилирует заново
+# на каждом вызове, 0,2–0,5 с впустую при самом запросе в 0,1–0,2 с (замер JMeter, фаза 6-3)
+engine = create_engine(
+    get_settings().database_url, pool_pre_ping=True, connect_args={"options": "-c jit=off"}
+)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 

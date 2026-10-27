@@ -40,6 +40,8 @@ CLASS_EDITABLE_STATUSES = (ON_REVIEW, NEEDS_CLARIFICATION)
 GROUP_EDITABLE_STATUSES = (ON_REVIEW, NEEDS_CLARIFICATION)
 
 SEGMENT_LENGTH_M = 100  # участок улицы для планового ремонта (REQ-046)
+# Имя дороги без названия в OSM (дворы, проезды): load_roads; тепло не тянется по такому имени
+UNNAMED_ROAD = "Внутриквартальный проезд"
 GROUP_ORDER = ("А", "Б", "В", "Г", "Д", "Е")  # приоритет: А важнее
 
 
