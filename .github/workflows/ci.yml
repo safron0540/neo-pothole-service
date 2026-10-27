@@ -57,9 +57,7 @@ jobs:
             ruff format --check .
             if [ -d tests ]; then
               # код 5 = «тестов не найдено»: допустимо, пока тестов нет
-              pytest -m "not integration and not e2e and not slow" \
-                --cov=app --cov-report=term-missing --cov-fail-under=60 \
-                || [ $? -eq 5 ]
+              pytest -m "not integration and not e2e and not slow" || [ $? -eq 5 ]
             fi
           else
             echo "requirements.txt not found in ./backend. Skipping."
@@ -108,7 +106,7 @@ jobs:
             # проверка отката последней миграции: схема должна подниматься заново
             alembic downgrade -1
             alembic upgrade head
-            pytest -m "integration or e2e" || [ $? -eq 5 ]
+            pytest --cov=app --cov-report=term-missing --cov-fail-under=60 || [ $? -eq 5 ]
           else
             echo "requirements.txt or alembic.ini not found in ./backend. Skipping."
           fi
