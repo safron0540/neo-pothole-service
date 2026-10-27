@@ -150,7 +150,7 @@ class MapPoint(BaseModel):
     """Маркер карты и поля для всплывающей подсказки; полная карточка — /requests/{id}."""
 
     id: int
-    lat: float
+    lat: float = Field(description="точка на дороге: ближайшая к GPS точка найденной улицы")
     lon: float
     status: StatusCode
     defect_class: DefectClass
@@ -161,3 +161,32 @@ class MapPoint(BaseModel):
     contractor: Ref | None
     detected_at: UtcDateTime
     planned_due_at: UtcDateTime | None
+
+
+class HeatProperties(BaseModel):
+    street: str
+    street_id: int | None = Field(description="пусто, если улица собрана из нескольких кусков")
+    segment_idx: int | None = Field(description="номер участка 100 м; только на детальном уровне")
+    count: int = Field(description="заявок (ям) на этом отрезке")
+    weight: float = Field(description="большая яма — 1, маленькая — 0,5")
+    per_100m: float = Field(description="вес на 100 м дороги: по нему выбирается цвет")
+    level: Literal["low", "medium", "high", "critical"]
+
+
+class HeatFeature(BaseModel):
+    type: Literal["Feature"] = "Feature"
+    geometry: dict = Field(description="GeoJSON LineString или MultiLineString, [долгота, широта]")
+    properties: HeatProperties
+
+
+class HeatmapOut(BaseModel):
+    """Тепловая карта по дорогам (REQ-052): GeoJSON для L.geoJSON(...)."""
+
+    type: Literal["FeatureCollection"] = "FeatureCollection"
+    detail: Literal["street", "piece", "segment"] = Field(
+        description="улица целиком (zoom ≤ 12), кусок улицы (13–15), участок 100 м (≥ 16)"
+    )
+    features: list[HeatFeature]
+    outside_streets: int = Field(
+        description="заявок в окне без улицы в 30 м: их видно только маркерами"
+    )

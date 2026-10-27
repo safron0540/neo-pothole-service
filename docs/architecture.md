@@ -318,7 +318,7 @@ ALLOWED = {
 | Слияние             | merged_into_id, у основной duplicates_count + 1; глубина цепочки всегда 1                                                                                         | REQ-059                |
 | Приоритет           | класс (big выше) → duplicates_count ↓ → группа А→Е → detected_at → planned_due_at (В-11) | REQ-045 |
 | Участок улицы       | segment_idx = floor(ST_LineLocatePoint(линия, точка) × длина / 100)                                                                                               | REQ-046                |
-| Плановый ремонт     | Число отклонённых с reject_reason = small_pit малых не слитых заявок участка (одна заявка — одна яма, В-15) больше порога текущей группы улицы (А, Б 2; В 10; Г 16; Д 42; Е 104) → предложение открыто; иначе закрыто **\[D\]** (закрытие, В-16) | REQ-046, UC-10 |
+| Плановый ремонт     | Число отклонённых с reject_reason = small_pit малых не слитых заявок участка (одна заявка — одна яма, В-15) больше порога текущей группы улицы (А, Б 2; В 10; Г 16; Д 42; Е 104) → предложение открыто; иначе закрыто. Диспетчер: «Включить в план» (planned), «Оставить точечный ремонт» (declined), «Ремонт выполнен» (done); после declined и done ямы считаются с момента решения **\[D\]** (В-16) | REQ-046, UC-10 |
 | Выполнено в срок    | completed_at ≤ planned_due_at **\[D\]**                                                                                                                           | REQ-066                |
 | Среднее время       | completed_at − detected_at по выполненным заявкам                                                                                                                 | REQ-068                |
 | Отчёт = карта       | Один фильтр на /requests, /map/\*, /reports/\*; слитые не считаются (В-18) | REQ-067 |
@@ -398,11 +398,11 @@ ALLOWED = {
 
 - **Фото:** ссылки photo_before_url, photo_after_url подписаны и живут 15 минут; у слитой заявки фото «после» берётся у основной.
 
-- **Карта:** /map/points принимает bbox и отдаёт минимум полей; тепловая карта в формате \[lat, lon, weight\] для leaflet.heat.
+- **Карта:** /map/points принимает bbox и отдаёт минимум полей. Тепловая карта /map/heatmap — окраска дорог: GeoJSON-линии с числом ям и уровнем цвета по весу ям на 100 м (большая 1, маленькая 0,5; пороги 2 / 4 / 7 **\[D\]**); детальность по zoom: улица целиком, кусок улицы, участок 100 м. Яма греет свою дорогу и её продолжение с тем же названием (в OSM улица разрезана на куски), соседние дворы и перекрёстки не греет: иначе на всех дорогах Томска каждая яма задевала бы сотни проездов и карта считалась бы десятки секунд.
 
 - **Отчёты:** JSON; веб строит предпросмотр, SheetJS сохраняет его в .xlsx (REQ-071, 072).
 
-- **Уведомления:** приложение опрашивает /me/notifications раз в 30 с; к итоговой приёмке добавляется push через FCM (В-30) без изменения схемы.
+- **Уведомления:** приложение опрашивает /me/notifications раз в 30 с. Push через FCM HTTP v1 (app/modules/notifications/push.py): после коммита транзакции со сменой статуса уведомления уходят в фоновом потоке на все токены гражданина из device_tokens; токены, которые FCM назвал мёртвыми, удаляются. Включается ключом сервисного аккаунта Firebase (FCM_CREDENTIALS_FILE, файл в secrets/, в Git не идёт); без ключа работает только опрос.
 
 - **Типы для фронта** генерируются из openapi.json; CORS разрешён только адресу веба.
 
@@ -463,8 +463,10 @@ cp .env.example .env
 docker compose up -d --build
 docker compose exec backend alembic upgrade head
 docker compose exec backend python -m scripts.load_streets
+docker compose exec backend python -m scripts.load_roads
 docker compose exec backend python -m scripts.load_buildings
 docker compose exec backend python -m scripts.seed_demo
+docker compose exec backend python -m scripts.load_zones
 ```
 
 ### 12.3 Фоновые задачи, копии и мониторинг
@@ -557,7 +559,7 @@ docker compose exec backend python -m scripts.seed_demo
 | REQ-ЯР-026     | Карта своих заявок               | GET /me/requests                                                | MVP            |
 | REQ-ЯР-027     | Список «Мои заявки»              | GET /me/requests                                                | MVP            |
 | REQ-ЯР-028     | Детали заявки                    | GET /me/requests/{id}: фото «до» и «после», история             | MVP            |
-| REQ-ЯР-031     | Уведомления                      | notifications, GET /me/notifications (опрос); push FCM к итоговой приёмке | MVP частично   |
+| REQ-ЯР-031     | Уведомления                      | notifications, GET /me/notifications (опрос); push FCM (notifications/push.py, нужен ключ Firebase) | MVP            |
 | REQ-ЯР-032     | Переход из уведомления           | notifications.request_id                                        | MVP            |
 | REQ-ЯР-034     | Распознавание                    | ml_client; photos.ml_json, model_version                        | MVP (заглушка) |
 | REQ-ЯР-035     | Класс ямы                        | model_class, defect_class                                       | MVP            |

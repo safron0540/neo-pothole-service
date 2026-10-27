@@ -4,11 +4,13 @@
 в заявку при подаче (снимок) и потом не зависят от справочников.
 """
 
+import json
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from geoalchemy2 import Geography, Geometry
-from sqlalchemy import cast, func, or_, select, text
+from sqlalchemy import case, cast, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -26,11 +28,12 @@ from app.deps import Pagination
 from app.errors import ApiError
 from app.modules.auth.models import Citizen, User
 from app.modules.geo import service as geo
-from app.modules.geo.models import Contractor, District
+from app.modules.geo.models import Contractor, District, Street
 from app.modules.media import service as media
 from app.modules.media.models import Photo
 from app.modules.media.service import photo_url
 from app.modules.notifications.models import Notification
+from app.modules.planned_repair import service as planned_repair
 from app.modules.requests.filters import NEWEST_ORDER, PRIORITY_ORDER, RequestFilter, conditions
 from app.modules.requests.models import InternalNote, Request, RequestEvent
 from app.modules.requests.schemas import (
@@ -42,6 +45,9 @@ from app.modules.requests.schemas import (
     DispatcherRequestOut,
     DispatcherRequestSummary,
     EventOut,
+    HeatFeature,
+    HeatmapOut,
+    HeatProperties,
     MapPoint,
     MergeRequest,
     NoteOut,
@@ -219,6 +225,8 @@ def change_status(
         payload["main_id"] = request.merged_into_id
     event = add_event(session, request.id, "status_changed", actor_id, **payload)
     notify_author(session, request, event)
+    if REJECTED in (current, target):
+        planned_repair.recalc_for_request(session, request)  # REQ-046: тот же коммит
     if follow:
         return
 
@@ -282,6 +290,7 @@ def merge(
     session.flush()
     for merged in (request, *children):
         change_status(session, merged, main.status, actor_id, "dispatcher", follow=True)
+        planned_repair.recalc_for_request(session, merged)  # слитая яма больше не считается
     session.commit()
     return dispatcher_card(session, request_id)
 
@@ -393,15 +402,24 @@ MAP_LIMIT = 2000  # больше маркеров в окне не рисуем:
 
 
 def map_points(session: Session, f: RequestFilter, bbox: str) -> list[MapPoint]:
-    """Заявки в видимой области (REQ-048): те же фильтры, что у списка (REQ-067)."""
+    """Заявки в видимой области (REQ-048): те же фильтры, что у списка (REQ-067).
+
+    Маркер ставится на дорогу: в ближайшую точку найденной улицы (она не дальше 30 м).
+    Настоящая GPS-точка заявки — в карточке (location).
+    """
     box = validators.parse_bbox(bbox)
     if box is None:
         raise ApiError(422, "invalid_bbox", "bbox: запад,юг,восток,север в градусах")
     now = datetime.now(UTC)
-    point = cast(Request.location, Geometry)
+    gps = cast(Request.location, Geometry)
+    point = case(
+        (Street.id.is_not(None), func.ST_ClosestPoint(cast(Street.geom, Geometry), gps)),
+        else_=gps,
+    )
     envelope = cast(func.ST_MakeEnvelope(*box, 4326), Geography)
     rows = session.execute(
         select(Request, func.ST_Y(point), func.ST_X(point), District.name, Contractor.name)
+        .outerjoin(Street, Street.id == Request.street_id)
         .outerjoin(District, District.id == Request.district_id)
         .outerjoin(Contractor, Contractor.id == Request.contractor_id)
         .where(Request.location.op("&&")(envelope), *conditions(f, now))
@@ -425,6 +443,136 @@ def map_points(session: Session, f: RequestFilter, bbox: str) -> list[MapPoint]:
         )
         for r, lat, lon, district, contractor in rows
     ]
+
+
+# --- Тепловая карта по дорогам -------------------------------------------------------------
+
+# Кусочки дорог рядом с ямами и их «тепло»: сумма весов ям, затухающая с расстоянием
+# exp(−d²/2σ²). Тепло считается по расстоянию до ямы, а не по номеру куска улицы, поэтому
+# на стыках кусков OSM и на перекрёстках линия не рвётся.
+HEAT_SQL = text(
+    """
+    WITH pits AS MATERIALIZED (
+        SELECT ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography AS location, w, street_id
+        FROM unnest(CAST(:lons AS float8[]), CAST(:lats AS float8[]), CAST(:ws AS float8[]),
+                    CAST(:streets AS bigint[]))
+            AS p(lon, lat, w, street_id)
+    ), pairs AS MATERIALIZED (
+        -- Яма греет свою дорогу и её продолжение с тем же названием в пределах reach:
+        -- в OSM улица разрезана на куски, и тепло не должно рваться на стыках. Соседние
+        -- дворы и перекрёстки не греются, иначе каждая яма задевала бы сотни проездов.
+        SELECT s.id AS street_id, p.location, p.w
+        FROM pits p
+        JOIN streets own ON own.id = p.street_id
+        JOIN streets s ON ST_DWithin(s.geom, p.location, :reach)
+            AND (s.id = own.id OR s.name = own.name)
+        WHERE s.geom && ST_MakeEnvelope(:w, :s, :e, :n, 4326)::geography
+    ), near AS (
+        SELECT s.id, s.name, s.geom, ST_Length(s.geom) AS len
+        FROM streets s
+        WHERE s.id IN (SELECT street_id FROM pairs)
+    ), pieces AS MATERIALIZED (
+        SELECT near.id, near.name, g.i, cut.piece,
+               ST_LineInterpolatePoint(cut.piece, 0.5)::geography AS mid
+        FROM near,
+             generate_series(0, GREATEST(CEIL(near.len / :step)::int - 1, 0)) AS g(i),
+             LATERAL (SELECT ST_LineSubstring(near.geom::geometry,
+                                              LEAST(g.i * :step / near.len, 1),
+                                              LEAST((g.i + 1) * :step / near.len, 1))
+                      AS piece) AS cut
+    ), heat AS (
+        SELECT pieces.id, pieces.name, pieces.i, pieces.piece,
+               SUM(p.w * EXP(-POWER(ST_Distance(pieces.mid, p.location), 2)
+                   / (2 * :sigma * :sigma))) AS kernel,
+               COUNT(*) FILTER (WHERE ST_DWithin(pieces.mid, p.location, :sigma)) AS n,
+               COALESCE(SUM(p.w) FILTER (WHERE ST_DWithin(pieces.mid, p.location, :sigma)), 0)
+                   AS weight
+        FROM pieces
+        JOIN pairs p ON p.street_id = pieces.id AND ST_DWithin(pieces.mid, p.location, :reach)
+        GROUP BY pieces.id, pieces.name, pieces.i, pieces.piece
+    )
+    SELECT id, name, i, ST_AsGeoJSON(piece, 6) AS geometry, kernel, n, weight
+    FROM heat
+    """
+)
+
+
+def heatmap(session: Session, f: RequestFilter, bbox: str, zoom: int) -> HeatmapOut:
+    """Тепловая карта дорог (REQ-052): каждая яма «греет» дорогу вокруг себя, цвет
+    кусочка — по весу ям на 100 м (rules.heat_density, rules.heat_level). Масштаб задаёт
+    длину кусочков и ширину пятна. По умолчанию считаются неустранённые ямы; слитые — нет."""
+    box = validators.parse_bbox(bbox)
+    if box is None:
+        raise ApiError(422, "invalid_bbox", "bbox: запад,юг,восток,север в градусах")
+    if not f.statuses:
+        f = replace(f, statuses=rules.ACTIVE_STATUSES)
+    now = datetime.now(UTC)
+    detail = rules.heat_detail(zoom)
+    step, sigma = rules.HEAT_STEP_M[detail], rules.HEAT_SIGMA_M[detail]
+    reach = 3 * sigma  # дальше вклад ямы меньше 1 %
+    # Ямы чуть за краем окна тоже греют видимые дороги
+    margin = reach / 60000  # ≈ градусы на широте Томска
+    west, south, east, north = box
+    wider = cast(
+        func.ST_MakeEnvelope(west - margin, south - margin, east + margin, north + margin, 4326),
+        Geography,
+    )
+    point = cast(Request.location, Geometry)
+    weight = case(*((Request.defect_class == c, w) for c, w in rules.HEAT_WEIGHTS.items()))
+    pits = session.execute(
+        select(func.ST_X(point), func.ST_Y(point), weight, Request.street_id).where(
+            *conditions(f, now), Request.location.op("&&")(wider)
+        )
+    ).all()
+    features: list[HeatFeature] = []
+    if pits:
+        rows = session.execute(
+            HEAT_SQL,
+            {
+                "lons": [p[0] for p in pits],
+                "lats": [p[1] for p in pits],
+                "ws": [float(p[2]) for p in pits],
+                "streets": [p[3] for p in pits],
+                "w": west,
+                "s": south,
+                "e": east,
+                "n": north,
+                "reach": reach,
+                "step": step,
+                "sigma": sigma,
+            },
+        )
+        for street_id, name, i, geometry, kernel, n, total in rows:
+            per_100m = round(rules.heat_density(float(kernel), sigma), 2)
+            level = rules.heat_level(per_100m)
+            if level is None:
+                continue
+            features.append(
+                HeatFeature(
+                    geometry=json.loads(geometry),
+                    properties=HeatProperties(
+                        street=name,
+                        street_id=street_id,
+                        segment_idx=i * step // rules.SEGMENT_LENGTH_M,
+                        count=int(n),
+                        weight=float(total),
+                        per_100m=per_100m,
+                        level=level,
+                    ),
+                )
+            )
+    features.sort(key=lambda feature: feature.properties.per_100m)  # горячие рисуются поверх
+    in_window = cast(func.ST_MakeEnvelope(*box, 4326), Geography)
+    outside = session.scalar(
+        select(func.count())
+        .select_from(Request)
+        .where(
+            *conditions(f, now),
+            Request.street_id.is_(None),
+            Request.location.op("&&")(in_window),
+        )
+    )
+    return HeatmapOut(detail=detail, features=features, outside_streets=outside)
 
 
 # --- Внутренние заметки ------------------------------------------------------------------

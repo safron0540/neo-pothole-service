@@ -148,3 +148,52 @@ def test_req_046_segment_of_short_street_is_zero():
 )
 def test_req_015_address(street, house, district, expected):
     assert rules.format_address(street, house, district) == expected
+
+
+def test_req_066_done_on_time():
+    assert rules.done_on_time(NOW, NOW) is True
+    assert rules.done_on_time(NOW + timedelta(seconds=1), NOW) is False
+    assert rules.done_on_time(None, NOW) is None and rules.done_on_time(NOW, None) is None
+
+
+def test_req_068_hours_between():
+    assert rules.hours_between(NOW, NOW + timedelta(hours=26, minutes=30)) == 26.5
+    assert rules.hours_between(None, NOW) is None
+
+
+@pytest.mark.parametrize(
+    ("value", "level"),
+    [
+        (0, None),
+        (0.5, "low"),
+        (1.9, "low"),
+        (2, "medium"),
+        (3.5, "medium"),
+        (4, "high"),
+        (7, "critical"),
+        (12, "critical"),
+    ],
+)
+def test_req_052_heat_level(value, level):
+    assert rules.heat_level(value) == level
+
+
+@pytest.mark.parametrize(
+    ("zoom", "detail"),
+    [
+        (10, "street"),
+        (12, "street"),
+        (13, "piece"),
+        (15, "piece"),
+        (16, "segment"),
+        (19, "segment"),
+    ],
+)
+def test_req_052_heat_detail(zoom, detail):
+    assert rules.heat_detail(zoom) == detail
+
+
+def test_req_052_heat_density_one_pit():
+    """Одна большая яма в центре пятна σ = 40 м даёт ≈ 1 яму на 100 м."""
+    assert rules.heat_density(1.0, 40) == pytest.approx(0.997, abs=0.01)
+    assert rules.heat_density(3.0, 40) == pytest.approx(2.99, abs=0.02)  # три ямы — medium

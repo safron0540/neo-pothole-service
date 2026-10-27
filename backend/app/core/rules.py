@@ -110,3 +110,51 @@ def format_address(street: str | None, house: str | None, district: str | None) 
     if not street:
         return None
     return ", ".join(p for p in (street, house, district) if p)
+
+
+def done_on_time(completed_at: datetime | None, planned_due_at: datetime | None) -> bool | None:
+    """Выполнено в срок: дата выполнения не позже плановой [D] (REQ-066). Нет дат — None."""
+    if completed_at is None or planned_due_at is None:
+        return None
+    return completed_at <= planned_due_at
+
+
+def hours_between(start: datetime | None, end: datetime | None) -> float | None:
+    """Длительность в часах, например от обнаружения до выполнения (REQ-068)."""
+    if start is None or end is None:
+        return None
+    return round((end - start).total_seconds() / 3600, 1)
+
+
+# Тепловая карта по дорогам: каждая яма «греет» дорогу вокруг себя по нормальному
+# распределению; плотность — вес ям на 100 м дороги. Пороги цвета фиксированные, чтобы
+# «красный» не менялся от фильтра; меняются здесь, в одном месте [D]
+HEAT_MIN = 0.1  # слабее — не рисуем: так линия плавно сходит на нет
+HEAT_LEVELS = ((7, "critical"), (4, "high"), (2, "medium"), (HEAT_MIN, "low"))
+HEAT_WEIGHTS = {"big": 1.0, "small": 0.5}  # маленькая яма греет дорогу вдвое слабее
+# Детальность по масштабу: длина кусочка линии и ширина «пятна» одной ямы, метры
+HEAT_STEP_M = {"street": 150, "piece": 50, "segment": 20}
+HEAT_SIGMA_M = {"street": 200, "piece": 80, "segment": 40}
+
+
+def heat_level(per_100m: float) -> str | None:
+    """Уровень цвета; почти без ям — None (кусочек не рисуется)."""
+    return next((level for bound, level in HEAT_LEVELS if per_100m >= bound), None)
+
+
+def heat_density(kernel_sum: float, sigma_m: float) -> float:
+    """Сумма весов ям, взвешенных по расстоянию exp(−d²/2σ²), → вес ям на 100 м дороги.
+
+    Нормировка как у плотности нормального распределения: одна яма на всю длину пятна
+    в сумме даёт ровно свой вес.
+    """
+    return kernel_sum * SEGMENT_LENGTH_M / (sigma_m * math.sqrt(2 * math.pi))
+
+
+def heat_detail(zoom: int) -> str:
+    """Детальность по масштабу Leaflet: улица издалека → квартал → участки вблизи."""
+    if zoom <= 12:
+        return "street"
+    if zoom <= 15:
+        return "piece"
+    return "segment"

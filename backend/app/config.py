@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     ml_url: str = "http://127.0.0.1:8001"
     ml_timeout_seconds: float = 8.0
 
+    # JSON сервисного аккаунта Firebase для push (REQ-031). Пусто — push выключен
+    fcm_credentials_file: str = ""
+
     # Радиусы поиска при автообработке, метры (REQ-039, 044; В-13 [D])
     street_match_radius_m: float = 30
     building_match_radius_m: float = 30

@@ -12,7 +12,7 @@ geoalchemy2==0.20.0
 
 # Хэш паролей (БЗ-2) и access-токены JWT
 argon2-cffi==25.1.0
-pyjwt==2.15.0
+pyjwt[crypto]==2.15.0  # crypto: подпись RS256 для входа в Firebase (push)
 
 # Приём файлов multipart/form-data: фото «до» и «после»; проверка формата и размера
 python-multipart==0.0.32

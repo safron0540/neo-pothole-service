@@ -27,8 +27,10 @@ Swagger: http://localhost:8000/api/docs. Контракт API v1 для веба
 ```bash
 docker compose exec backend alembic upgrade head                # таблицы и группы улиц А–Е
 docker compose exec backend python -m scripts.load_streets      # улицы из OSM (Overpass)
+docker compose exec backend python -m scripts.load_roads        # все проезжие дороги и дворы (группа Е по умолчанию)
 docker compose exec backend python -m scripts.load_buildings    # дома с номерами вдоль улиц
-docker compose exec backend python -m scripts.seed_demo         # 3 подрядчика, диспетчер, подрядчик, гражданин
+docker compose exec backend python -m scripts.seed_demo         # 3 подрядчика, диспетчер, подрядчик, гражданин, 30 заявок
+docker compose exec backend python -m scripts.load_zones        # зоны подрядчиков по границам районов Томска
 ```
 
 Улицы, их группы и районы задаёт `backend/scripts/street_groups.csv` (пока черновик, проверяет команда). Скрипты можно запускать повторно: строки обновляются по номеру OSM, дублей нет. Публичный Overpass бывает перегружен, скрипты повторяют запрос сами; ответ можно сохранить (`--save файл.json`) и загрузить без сети (`--file файл.json`). `seed_demo` печатает пароли новых пользователей один раз; задать свой: переменная `SEED_PASSWORD`.
