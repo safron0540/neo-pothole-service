@@ -32,6 +32,17 @@ docker compose --profile monitoring up -d    # Prometheus :9090 и Grafana :3000
 
 Бэкенд отдаёт метрики на `/metrics` (снаружи nginx его закрывает): число запросов и время ответа по маршрутам. Дашборд «Ямочный ремонт: API» в Grafana появляется сам (`infra/grafana/`): доля запросов быстрее 1 с (ПР-2), запросы в секунду, ошибки 5xx, 95-й перцентиль по маршрутам. Пароль Grafana — `GRAFANA_PASSWORD` в `.env`. На сервере открывать через SSH-туннель: `ssh -L 3000:127.0.0.1:3000 …`.
 
+### Ночная чистка и резервные копии
+
+На сервере в crontab пользователя, который запускает compose (время UTC):
+
+```cron
+30 18 * * * cd /workspace && docker compose exec -T backend python -m scripts.cleanup >> backups/cleanup.log 2>&1
+0 19 * * *  cd /workspace && ./backend/scripts/backup.sh >> backups/backup.log 2>&1
+```
+
+`cleanup` удаляет фото без заявки старше суток (проверили фото, но заявку не подали) и истёкшие refresh-токены. `backup.sh` кладёт в `backups/` дамп базы и архив фото, хранит 7 дней (`KEEP_DAYS`). Как восстановить на чистой машине — в начале [`backend/scripts/backup.sh`](backend/scripts/backup.sh). Папка `backups/` в Git не идёт.
+
 ### База и демо-данные
 
 ```bash
