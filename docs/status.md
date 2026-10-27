@@ -1,72 +1,35 @@
 # Статус проекта
 
-Состояние на **21.10.2026**. Обновляй этот файл в конце каждого PR: что слито, что дальше.
+Состояние на **26.10.2026**. Обновляй этот файл в конце каждого PR: что слито, что дальше.
 
 ## Что уже есть
 
-**`main` (`0ee17d3`, PR #97 от Егора)** — пустой каркас монорепо: папки `backend/`, `ml_service/`, `infra/`, `tests/` с `.gitkeep`, `README.md`, шаблон PR с Definition of Done, `.github/ISSUE_TEMPLATE/bug_report.md`, `ci.yml` с деплоем на сервер. Кода бэкенда в `main` пока нет. Защита `main` включена: PR требует одобрения и зелёной проверки `CI gate`.
+**Фаза 1 слита в `main`** (PR #101–#109): каркас FastAPI и `/api/v1/health`, docker compose (`db`, `backend`, `ml_service`), Alembic и миграции `0001`–`0005` (17 таблиц, CHECK, триггеры), загрузка улиц и домов из OSM, `seed_demo.py`, заглушка ML, контракт API v1 (`docs/openapi.json`).
 
-**PR 1-1 `ci/bootstrap` открыт 17.10** («feat(backend): каркас бэкенда и проверка /api/v1/health»), 7 коммитов поверх `0ee17d3`. CI зелёный (7 проверок, деплой на PR пропускается), ждёт ревью Егора.
+**Фаза 2 готова в ветках** (цепочкой от `main`, PR открываются по одному):
 
-1. `chore: каталоги backend/app и tests, дополнить .gitignore`
-2. `chore: pyproject.toml и зависимости backend`
-3. `feat(app): приложение FastAPI, настройки и GET /api/v1/health`
-4. `test(health): дымовые тесты API и настроек, автометки в conftest`
-5. `chore(docker): Dockerfile и .dockerignore backend`
-6. `ci: проверка /api/v1/health в деплое, убрать script_stop`
-7. `docs: шаблон PR и запуск backend в README`
+| PR | Ветка | Суть |
+| --- | --- | --- |
+| 2-1 | `feat/core-rules` | `core/rules.py`, `core/validators.py`: переходы, срок, просрочка, приоритет (В-11), участок 100 м, адрес; радиусы в настройках |
+| — | `feat/cors` | CORS только для адресов веба (`CORS_ORIGINS`); отдельно от `main` |
+| 2-2 | `feat/auth` | argon2, JWT 30 мин, refresh 14 дней с ротацией и отзывом всех при повторе, раздельные входы, `/me`, зависимость «роль» |
+| 2-3 | `feat/photos-analyze` | `POST /photos/analyze` (Pillow, 10 МБ, клиент ML с таймаутом 8 с), `GET /photos/{id}` по подписи на 15 мин |
+| 2-4 | `feat/address-binding` | улица и дом в 30 м, снимок адреса, подрядчик по зоне, дубликат в 15 м |
+| 2-5 | `feat/requests-create` | `POST /requests` с автообработкой и `client_request_id`, мои заявки гражданина |
+| 2-6 | `feat/change-status` | `change_status()`: FOR UPDATE, version → 409, событие и уведомление, «Принято» → «В работе» |
+| 2-7 | `feat/decision-execution` | карточка и история, правка класса и группы, назначение подрядчика, заявки подрядчика и «Выполнено» с фото «после» |
+| 2-8 | `test/e2e-full-cycle` | полный цикл e2e, 30 демо-заявок в `seed_demo`, том `photos` в compose |
 
-Локальная проверка: `ruff check` и `ruff format --check` чистые, 5 тестов зелёные, порог покрытия 60 % проходит (в `core/` и `service.py` пока 0 строк, настоящая цифра появится с PR 2-1). Docker-образ собирается, контейнер `healthy`, `/api/v1/health` → `{"status":"ok","version":"0.1.0"}`.
-
-Что в ветке:
-
-- `backend/app/main.py` — FastAPI, `GET /api/v1/health` → `{"status": "ok", "version": "0.1.0"}`, Swagger `/api/docs`.
-- `backend/app/config.py` — `Settings` из `.env`: `DATABASE_URL`, `JWT_SECRET` (в `prod` запрещён секрет по умолчанию), `JWT_ACCESS_MINUTES`, `JWT_REFRESH_DAYS`, `PHOTOS_DIR`, `ML_URL`, `ML_TIMEOUT_SECONDS`.
-- `backend/pyproject.toml` — ruff (py312, длина строки 100, правила E F I B UP), pytest (метки integration / e2e / slow), coverage только по `core/` и `service.py`.
-- `backend/requirements.txt`: fastapi 0.143.0, uvicorn[standard] 0.54.0, pydantic 2.14.1, pydantic-settings 2.15.0. `requirements-dev.txt`: ruff 0.17.0, pytest 9.1.1, pytest-cov 7.1.0, httpx2 2.13.1.
-- `backend/Dockerfile` — `python:3.12-slim`, пользователь без root, HEALTHCHECK на `/api/v1/health`.
-
-**Ветка `feat/compose-stack` (PR 1-3) запушена 18.10**, PR откроем после слияния 1-1 (ветка сделана от `ci/bootstrap`, после слияния переносится на `main`). Внутри `docker-compose.yml` в корне (`db` — postgis/postgis:16-3.4, `backend`; порты только на localhost), `.env.example` в корне, раздел README «Запуск одной командой». Проверено: `docker compose up -d --build` → оба сервиса `healthy`, health отвечает, PostGIS 3.4 в базе.
-
-**Ветка `docs/project-documents` (PR 1-2)** — этот пакет документов в `docs/`.
-
-**Фаза 1 закончена в ветках (21.10).** Все 9 веток проходят шаги CI по отдельности (ruff, быстрые тесты, миграции на свежей PostGIS, `alembic check`, откат, интеграционные тесты), `docker compose up` поднимает db, backend и ml_service. Ветки 1-3…1-9 идут цепочкой от `ci/bootstrap`; 1-2 — от `main`. Итого тестов: 17 быстрых (включая 10 контрактных), 49 интеграционных, 8 у заглушки ML. Покрытие `app/core` — 100 % (пока только `statuses.py`).
-
-## Что сделать прямо сейчас
-
-1. Получить ревью Егора на PR 1-1 и слить его (Squash and merge). Сливает человек.
-2. Проверить, что деплой после слияния прошёл (вкладка Actions → job `Deploy to Server`).
-3. После слияния 1-1 перенести цепочку 1-3…1-9 на `main` и открывать PR по одному: 1-2, 1-3, 1-4 … 1-9. После 1-9 — тег `v0.1.0`.
-4. Стенд к 27.10 (В-32): после слияния деплой идёт сам; данные загрузить скриптами `scripts.load_streets`, `load_buildings`, `seed_demo`.
-
-## Что дальше по плану
-
-Фаза 1 по календарю (06–12.10) уже прошла, фаза 2 (13–26.10) идёт. PR фазы 1 по порядку:
-
-| PR | Ветка | Суть | Состояние |
-| --- | --- | --- | --- |
-| 1-1 | `ci/bootstrap` | Каркас бэкенда, health, CI | PR открыт, ждёт ревью |
-| 1-2 | `docs/project-documents` | Документы в `docs/` | ветка запушена |
-| 1-3 | `feat/compose-stack` | `docker-compose.yml`: `db` и `backend`; `.env.example`; README | ветка запушена |
-| 1-4 | `feat/db-reference` | Alembic + geoalchemy2 helpers, `0001_postgis`, `0002_reference` | ветка запушена, 6 тестов |
-| 1-5 | `feat/db-users` | `0003_users`, триггер `check_user_role` | ветка запушена, 8 тестов |
-| 1-6 | `feat/db-requests` | `0004_requests`: CHECK, индексы, триггеры; статус — код (В-37) | ветка запушена, 28 тестов |
-| 1-7 | `feat/seed-street-data` | `0005_seed_street_groups`, загрузка улиц и домов из OSM, `seed_demo.py` | ветка запушена, 7 тестов; 8 улиц (358 кусков), 1093 дома, покрытие домами 63 % кусков |
-| 1-8 | `feat/ml-stub` | Заглушка `ml_service/` (POST /predict, режимы ML_STUB_MODE) и сервис в compose | ветка запушена, 8 тестов |
-| 1-9 | `docs/openapi-v1` | Схемы Pydantic, 46 запросов MVP с ответом 501, `docs/openapi.json`, контрактные тесты | ветка запушена, 10 тестов; тег `v0.1.0` — после слияния |
-
-Полный план с коммитами по каждому PR — `docs/dev-plan.md`.
+Проверено локально на чистой PostGIS для каждой ветки: ruff, быстрые тесты, `alembic upgrade/check/downgrade -1/upgrade`, интеграционные и e2e. Всего 262 теста. Покрытие `core/` 100 %, `core/` и сервисов по всем тестам 97 % (`docs/architecture.md`, 13.1). Образ `backend` собирается, `seed_demo` проходит на данных Томска.
 
 ## Что блокирует
 
-- **Вопросы группы 1 (В-1…В-10)** приняты по рекомендации как [D] (18.10, PR 1-6), команда должна подтвердить или возразить до 26.10. Если решат иначе — новая миграция `0006_…` (на схему влияют только В-2, В-3, В-7).
-- **Ревьюер бэкенда не назначен.** Без него правило «одно одобрение» не выполнить. Пока ревьюит Егор.
-- **Формат ответа ML** (В-34) не согласован с ML-разработчиком: нужен до PR 2-3.
-- **`street_groups.csv`** — черновик бэкенда (группы и районы 8 улиц), команда должна проверить (В-35). Покрытие домов в OSM проверено: у 63 % кусков улиц есть дом в 30 м, на Богашёвском тракте — у 6 из 35 (за городом домов мало).
+1. **Порог покрытия в быстром job CI.** С PR 2-2 он не проходит (59 % → 44 %): сервисы покрыты интеграционными тестами, а быстрый job считает покрытие без базы. Нужно согласовать с Егором подсчёт покрытия в `backend-integration`.
+2. **Деплой на сервер** падает с PR #103 на шаге «Deploy via SSH»; нужна диагностика на сервере.
 
-## Окружение разработчика
+## Что дальше
 
-- Windows, проект в `D:\project\neo-pothole-service`.
-- Python 3.12.10 установлен через Python Install Manager (рядом стоит 3.14: для бэкенда использовать только 3.12, venv создавать через `py -V:3.12 -m venv .venv` или полным путём к python 3.12).
-- Git: почта для коммитов `artem-berdnikov-95@mail.ru` (привязана к GitHub `ArtemBerdnikov3234`). Если `git clone`/`git push` падает с ошибкой TLS (schannel), попробовать `git config --global http.sslBackend openssl`.
-- Docker Desktop установлен (`docker compose` работает). В PowerShell вместо `curl` с флагами использовать `curl.exe`.
+1. Решить вопрос покрытия в CI, открыть PR фазы 2 по одному (2-1, CORS, 2-2 … 2-8). После 2-8 — тег `v0.2.0`.
+2. Фаза 3: список заявок с фильтрами (3-1), заметки и карточка (3-2), уведомления (3-3), карта (3-4). После неё веб работает на настоящем API без мока.
+
+Полный план с коммитами по каждому PR — `docs/dev-plan.md`.

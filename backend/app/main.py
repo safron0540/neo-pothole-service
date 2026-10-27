@@ -1,6 +1,7 @@
 """Точка входа: uvicorn app.main:app."""
 
 from fastapi import APIRouter, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app import __version__, errors
@@ -42,6 +43,13 @@ app = FastAPI(
     openapi_tags=TAGS,
 )
 errors.install(app)
+# Токен передаётся в заголовке Authorization, cookie не нужны: allow_credentials не включаем
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 router = APIRouter(prefix=API_PREFIX)
 

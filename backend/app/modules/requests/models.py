@@ -26,6 +26,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import CHAR, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+# Таблицы, на которые ссылаются внешние ключи заявки: без импорта SQLAlchemy их не знает
+import app.modules.auth.models  # noqa: F401
+import app.modules.geo.models  # noqa: F401
+import app.modules.media.models  # noqa: F401
 from app.core.statuses import ON_REVIEW, STATUSES
 from app.db import Base
 

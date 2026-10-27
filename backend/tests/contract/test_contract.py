@@ -68,7 +68,14 @@ MVP = {
     ("patch", "/users/{user_id}"),
     ("post", "/users/{user_id}/reset-password"),
 }
-PUBLIC = {"/health", "/auth/citizen/register", "/auth/citizen/login", "/auth/staff/login"}
+# Фото по подписанной ссылке: подпись заменяет токен
+PUBLIC = {
+    "/health",
+    "/auth/citizen/register",
+    "/auth/citizen/login",
+    "/auth/staff/login",
+    "/photos/{photo_id}",
+}
 
 
 def operations():
@@ -127,11 +134,8 @@ def test_error_format_validation_hides_input():
 
 
 def test_error_format_not_implemented_stub():
-    assert_error(
-        client.post("/api/v1/auth/citizen/login", json={"login": "x", "password": "y"}),
-        501,
-        "not_implemented",
-    )
+    # Уведомления появятся в PR 3-3, до этого запрос отвечает 501
+    assert_error(client.get("/api/v1/me/notifications"), 501, "not_implemented")
 
 
 def test_error_schema_documented_instead_of_default_422():
