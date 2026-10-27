@@ -1,22 +1,27 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Clock, BookOpen, Building, Check, Pencil, Trash2, Wrench, Truck, Tractor, X, Loader2 } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
-import { api, ApiError } from '../../api';
+import { api } from '../../api';
 import type { GeoLineString, StreetGroupCode, StreetOut } from '../../api';
+import { IconSelect } from '../../components/IconSelect';
 import { useReference } from '../../data/useReference';
+import { useContractorDistricts } from '../../data/contractorDistricts';
+import { useContractorContacts } from '../../data/useContractorContacts';
+import { shortDistrict } from '../../utils/format';
 
+import { Icon } from '../../components/Icon';
+import { CloseIcon, Spinner } from '../../components/UiIcons';
 const GROUP_META: Partial<Record<StreetGroupCode, { subtitle: string; badgeClass: string }>> = {
   А: { subtitle: 'Магистральные трассы', badgeClass: 'bg-red-700 text-white' },
   Б: { subtitle: 'Районные магистрали', badgeClass: 'bg-orange-500 text-white' },
   В: { subtitle: 'Местное значение и проезды', badgeClass: 'bg-neutral-200 text-neutral-700' },
 };
 const DEFAULT_BADGE = 'bg-neutral-200 text-neutral-800';
-const groupBadge = (code: StreetGroupCode | null) => (code ? GROUP_META[code]?.badgeClass ?? DEFAULT_BADGE : DEFAULT_BADGE);
 
-const CONTRACTOR_ICONS = [Wrench, Truck, Tractor];
-const CONTRACTOR_ICON_STYLES = ['bg-red-50 text-red-600', 'bg-blue-50 text-blue-600', 'bg-orange-50 text-orange-600'];
+const TILE_ICON_NAMES = ['tile-tools', 'tile-truck', 'tile-excavator'];
+const CONTRACTOR_TILE = ['bg-[#FFDAD4]', 'bg-[#DBE1FF]', 'bg-[#FFDBD0]'];
 
 const STREETS_PAGE_SIZE = 6;
+
 
 type Notice = { type: 'ok' | 'error' | 'info'; text: string } | null;
 type FieldEdits = Partial<Record<StreetGroupCode, { deadline?: string; maxPits?: string }>>;
@@ -184,84 +189,95 @@ export default function AdminPage() {
     }
   };
 
-  const deleteStreet = async (street: StreetOut) => {
-    if (!confirm(`Удалить улицу «${street.name}»?`)) return;
-    try {
-      await api.deleteStreet(street.id);
-      if (streets.length === 1 && streetsPage > 1) setStreetsPage(streetsPage - 1);
-      setStreetsTick((t) => t + 1);
-    } catch (err) {
-      setNotice({ type: 'error', text: errorText(err) });
-    }
+  // ---------------- Подрядчики и зоны: выбор района ----------------
+  const contacts = useContractorContacts();
+  const { assignments, save: saveAssignments } = useContractorDistricts();
+  const [draft, setDraft] = useState<Record<number, number>>(assignments);
+
+  const setContractorDistrict = (contractorId: number, value: string) =>
+    setDraft((prev) => {
+      const next = { ...prev };
+      if (value === '') delete next[contractorId];
+      else next[contractorId] = Number(value);
+      return next;
+    });
+
+  const handleSaveContractors = () => {
+    saveAssignments(draft);
+    setNotice({ type: 'ok', text: 'Параметры подрядчиков сохранены.' });
   };
 
-  // ---------------- Районы ----------------
-  const [newDistrict, setNewDistrict] = useState('');
-  const [editingDistrict, setEditingDistrict] = useState<{ id: number; name: string } | null>(null);
-  const [districtError, setDistrictError] = useState<string | null>(null);
+  const fieldBase = 'w-20 h-10 px-3 bg-white border rounded-xl text-sm font-bold text-center outline-none focus:border-red-700';
 
-  const runDistrictAction = async (action: () => Promise<unknown>) => {
-    setDistrictError(null);
-    try {
-      await action();
-      await reload();
-      setStreetsTick((t) => t + 1);
-    } catch (err) {
-      // например 409: район используется в заявках
-      setDistrictError(err instanceof ApiError ? err.message : errorText(err));
-    }
-  };
+  const tabs = [
+    { id: 'deadlines' as const, iconName: 'tab-deadlines', title: 'Сроки устранения по категориям' },
+    { id: 'streets' as const, iconName: 'tab-streets', title: 'Улицы и районы' },
+    { id: 'contractors' as const, iconName: 'tab-contractors-zones', title: 'Подрядчики и зоны' },
+  ];
 
-  const addDistrict = async () => {
-    const name = newDistrict.trim();
-    if (!name) return;
-    await runDistrictAction(() => api.createDistrict(name));
-    setNewDistrict('');
-  };
+  const noticeBox = notice && (
+    <div
+      role="status"
+      className={`px-4 py-2.5 rounded-xl text-xs font-medium border ${
+        notice.type === 'error'
+          ? 'bg-red-50 border-red-200 text-red-800'
+          : notice.type === 'ok'
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+          : 'bg-amber-50 border-amber-200 text-amber-900'
+      }`}
+    >
+      {notice.text}
+    </div>
+  );
 
-  const saveDistrict = async () => {
-    if (!editingDistrict || !editingDistrict.name.trim()) return;
-    await runDistrictAction(() => api.updateDistrict(editingDistrict.id, editingDistrict.name.trim()));
-    setEditingDistrict(null);
-  };
+  const saveButton = (onClick: () => void, busy = false, disabled = false) => (
+    <button
+      onClick={onClick}
+      disabled={busy || disabled}
+      className="flex items-center gap-2 rounded-xl bg-red-700 px-6 py-2.5 text-sm font-bold text-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)] transition-colors hover:bg-red-800 disabled:opacity-60 cursor-pointer"
+    >
+      {busy ? <Spinner className="h-4 w-4 animate-spin" /> : <Icon name="save-check" className="h-[9px] w-3" />}
+      <span>Сохранить параметры</span>
+    </button>
+  );
 
-  const fieldBase = 'w-20 h-10 px-3 bg-white border rounded-xl text-sm font-bold text-center outline-none focus:border-red-600';
-
+  // Макет «Веб/Админ_*»: поля 16, заголовок 32 px, вкладки 64 px, карточки с зазором 14–16
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-100 text-neutral-800 antialiased">
-      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-6 flex flex-col justify-between">
-        <div>
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold text-neutral-900 leading-tight">Справочники и параметры системы</h1>
-            <p className="text-xs text-neutral-400 mt-1 font-light">
-              Управление классификатором улиц, нормативными сроками по ГОСТ Р 50597-2017 и зонами подрядчиков
-            </p>
-            {referenceError && (
-              <p className="text-xs text-red-600 mt-1">Не удалось загрузить справочники: {referenceError}</p>
-            )}
-          </div>
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col">
+        <div className="pb-4">
+          <h1 className="text-2xl font-bold leading-tight tracking-[-0.6px] text-neutral-800 sm:text-[32px] sm:leading-[38px] sm:tracking-[-0.8px]">Справочники и параметры системы</h1>
+          <p className="mt-1 max-w-[768px] text-sm text-neutral-600">
+            Управление классификатором улиц, нормативными сроками устранения дефектов, районами и зонами ответственности подрядных организаций.
+          </p>
+          {referenceError && <p className="mt-1 text-xs text-red-700">Не удалось загрузить справочники: {referenceError}</p>}
+        </div>
 
-          <div className="flex items-center gap-2 mb-6 border-b border-neutral-200 pb-2">
-            {[
-              { id: 'deadlines' as const, icon: Clock, title: 'Сроки устранения по категориям' },
-              { id: 'streets' as const, icon: BookOpen, title: 'Улицы и районы' },
-              { id: 'contractors' as const, icon: Building, title: 'Подрядчики и зоны' },
-            ].map((tab) => (
+        <div role="tablist" className="flex min-h-[64px] flex-wrap items-start gap-2 pb-[5px]">
+          {tabs.map((tab) => {
+            const active = activeSubTab === tab.id;
+            return (
               <button
                 key={tab.id}
+                role="tab"
+                aria-selected={active}
                 onClick={() => setActiveSubTab(tab.id)}
-                className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 cursor-pointer transition-all ${
-                  activeSubTab === tab.id ? 'bg-white text-red-700 shadow-sm border border-neutral-200' : 'text-neutral-500 hover:text-black'
+                className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-base font-normal cursor-pointer transition-colors ${
+                  active
+                    ? 'border-neutral-100 bg-white text-red-700 shadow-[0_4px_4px_rgba(0,0,0,0.15)]'
+                    : 'border-transparent text-neutral-800 hover:bg-white/60'
                 }`}
               >
-                <tab.icon className="w-4 h-4" />
+                <Icon name={tab.iconName} className="h-[15px] w-[15px]" />
                 <span>{tab.title}</span>
               </button>
-            ))}
-          </div>
+            );
+          })}
+        </div>
 
+        <div className={`flex flex-col gap-4 ${activeSubTab === 'deadlines' ? 'flex-1' : ''}`}>
           {activeSubTab === 'deadlines' && (
-            <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm space-y-5">
+            <div className="bg-white rounded-xl p-6 shadow-[0_1px_1px_rgba(0,0,0,0.05)] space-y-5">
               <div>
                 <h2 className="text-sm font-bold text-neutral-900">Нормативы устранения дефектов по ГОСТ Р 50597-2017</h2>
                 <p className="text-xs text-neutral-400 mt-0.5 font-light">
@@ -277,7 +293,7 @@ export default function AdminPage() {
                   const pitsErr = groupErrors[`${g.code}-maxPits`];
                   return (
                     <div key={g.code} className="bg-neutral-50 rounded-2xl p-4 border border-neutral-100">
-                      <div className="flex items-center justify-between gap-4">
+                      <div className="flex flex-wrap items-center justify-between gap-4">
                         <div className="flex items-center gap-4">
                           <span className={`${meta?.badgeClass ?? DEFAULT_BADGE} text-xs font-bold px-3 py-1.5 rounded-lg`}>
                             КАТЕГОРИЯ «{g.code}»
@@ -324,231 +340,148 @@ export default function AdminPage() {
             </div>
           )}
 
+
           {activeSubTab === 'streets' && (
-            <div className="space-y-6">
-              <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm">
-                <div className="flex items-center justify-between mb-5 gap-4">
-                  <h2 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
-                    Классификатор улиц и распределение по районам
-                    {streetsLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-red-700" />}
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="search"
-                      value={searchInput}
-                      onChange={(e) => setSearchInput(e.target.value)}
-                      placeholder="Поиск по названию"
-                      className="h-9 px-3 text-xs bg-neutral-50 border border-neutral-200 rounded-xl outline-none focus:border-red-600"
-                    />
-                    <button
-                      onClick={() => openStreetModal()}
-                      className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-sm font-bold cursor-pointer"
-                    >
-                      + Добавить улицу
-                    </button>
-                  </div>
-                </div>
-
-                {streetsResult?.error && <div className="text-xs text-red-600 mb-3">Не удалось загрузить улицы: {streetsResult.error}</div>}
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-neutral-200 text-neutral-400 uppercase font-semibold text-xs tracking-wider pb-3">
-                        <th className="py-3 px-3">Название улицы</th>
-                        <th className="py-3 px-3">Район</th>
-                        <th className="py-3 px-3">Категория дороги</th>
-                        <th className="py-3 px-3 text-right">Действия</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100">
-                      {streets.map((st) => (
-                        <tr key={st.id} className="hover:bg-neutral-50/80 transition-colors">
-                          <td className="py-3.5 px-3 font-bold text-neutral-900">{st.name}</td>
-                          <td className="py-3.5 px-3 text-neutral-600 font-medium">
-                            {districts.find((d) => d.id === st.district_id)?.name ?? '—'}
-                          </td>
-                          <td className="py-3.5 px-3">
-                            {st.street_group ? (
-                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${groupBadge(st.street_group)}`}>
-                                Категория {st.street_group}
-                              </span>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-                          <td className="py-3.5 px-3 text-right">
-                            <div className="inline-flex items-center gap-3">
-                              <button
-                                onClick={() => openStreetModal(st)}
-                                aria-label={`Редактировать ${st.name}`}
-                                className="text-neutral-400 hover:text-black cursor-pointer font-bold"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => deleteStreet(st)}
-                                aria-label={`Удалить ${st.name}`}
-                                className="text-neutral-400 hover:text-red-700 cursor-pointer font-bold"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {!streetsLoading && streets.length === 0 && (
-                    <div className="py-8 text-center text-xs text-neutral-400 font-light">Улицы не найдены</div>
-                  )}
-                </div>
-
-                <Pagination
-                  currentPage={streetsPage}
-                  totalItems={streetsResult?.total ?? 0}
-                  pageSize={STREETS_PAGE_SIZE}
-                  onPageChange={setStreetsPage}
-                  itemLabel="улиц"
-                />
-              </div>
-
-              <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm">
-                <h2 className="text-sm font-bold text-neutral-900 mb-4">Районы</h2>
-                <ul className="divide-y divide-neutral-100 text-xs">
-                  {districts.map((d) => (
-                    <li key={d.id} className="py-2.5 flex items-center justify-between gap-3">
-                      {editingDistrict?.id === d.id ? (
-                        <input
-                          autoFocus
-                          value={editingDistrict.name}
-                          onChange={(e) => setEditingDistrict({ id: d.id, name: e.target.value })}
-                          onKeyDown={(e) => e.key === 'Enter' && saveDistrict()}
-                          className="h-9 flex-1 px-3 bg-neutral-50 border border-neutral-200 rounded-xl outline-none focus:border-red-600"
-                        />
-                      ) : (
-                        <span className="font-semibold text-neutral-800">{d.name}</span>
-                      )}
-                      <div className="flex items-center gap-3">
-                        {editingDistrict?.id === d.id ? (
-                          <>
-                            <button onClick={saveDistrict} aria-label="Сохранить" className="text-emerald-700 cursor-pointer font-bold">
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => setEditingDistrict(null)} aria-label="Отмена" className="text-neutral-400 cursor-pointer font-bold">
-                              <X className="w-4 h-4" />
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => setEditingDistrict({ id: d.id, name: d.name })}
-                              aria-label={`Переименовать ${d.name}`}
-                              className="text-neutral-400 hover:text-black cursor-pointer font-bold"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => confirm(`Удалить район «${d.name}»?`) && runDistrictAction(() => api.deleteDistrict(d.id))}
-                              aria-label={`Удалить ${d.name}`}
-                              className="text-neutral-400 hover:text-red-700 cursor-pointer font-bold"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="flex items-center gap-2 mt-4">
+            <div className="flex flex-col gap-4 rounded-xl bg-white p-4 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+              <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+                <h2 className="flex items-center gap-2 text-sm font-bold text-neutral-800">
+                  Классификатор улиц и распределение по районам
+                  {streetsLoading && <Spinner className="h-3.5 w-3.5 animate-spin text-red-700" />}
+                </h2>
+                <div className="flex items-center gap-2">
                   <input
-                    value={newDistrict}
-                    onChange={(e) => setNewDistrict(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addDistrict()}
-                    placeholder="Название нового района"
-                    className="h-9 flex-1 px-3 text-xs bg-neutral-50 border border-neutral-200 rounded-xl outline-none focus:border-red-600"
+                    type="search"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    placeholder="Поиск по названию"
+                    className="h-9 rounded-lg bg-neutral-100 px-3 text-xs outline-none focus:ring-1 focus:ring-red-700"
                   />
-                  <button onClick={addDistrict} className="h-9 px-4 bg-neutral-100 hover:bg-neutral-200 rounded-xl text-sm font-bold cursor-pointer">
-                    + Добавить район
+                  <button
+                    onClick={() => openStreetModal()}
+                    className="flex h-9 items-center gap-2 rounded-lg bg-neutral-100 px-4 text-xs font-bold text-neutral-800 hover:bg-neutral-200 cursor-pointer transition-colors"
+                  >
+                    <Icon name="plus-circle" className="h-[15px] w-[15px]" />
+                    <span>+ Добавить улицу</span>
                   </button>
                 </div>
-                {districtError && <div className="text-xs text-red-600 font-medium mt-2">{districtError}</div>}
               </div>
+
+              {streetsResult?.error && <div className="text-xs text-red-700">Не удалось загрузить улицы: {streetsResult.error}</div>}
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="bg-[#F2F3FF] text-[11px] font-bold uppercase leading-[14px] tracking-[0.55px] text-neutral-600">
+                      <th className="rounded-l-xl px-4 py-3 w-[38%]">Название улицы / участка</th>
+                      <th className="px-4 py-3">Район</th>
+                      <th className="px-4 py-3">Категория дороги</th>
+                      <th className="rounded-r-xl px-4 py-3 text-right">Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {streets.map((st) => (
+                      <tr key={st.id} className="border-b border-neutral-200 transition-colors hover:bg-neutral-100/50">
+                        <td className="px-4 py-5">
+                          <span className="flex items-center gap-3 font-bold text-neutral-800">
+                            <Icon name="ruler" className="h-[9px] w-[15px] shrink-0 text-neutral-600" />
+                            {st.name}
+                          </span>
+                        </td>
+                        <td className="px-4 py-5 text-neutral-800">{shortDistrict(districts.find((d) => d.id === st.district_id)?.name)}</td>
+                        <td className="px-4 py-5">
+                          {st.street_group ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFDAD4] px-2.5 py-0.5 text-[11px] font-bold text-neutral-800">
+                              <span className={`h-1.5 w-1.5 rounded-full ${st.street_group === 'А' ? 'bg-red-700' : 'bg-neutral-800'}`} />
+                              Категория {st.street_group}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="px-4 py-5 text-right">
+                          <button
+                            onClick={() => openStreetModal(st)}
+                            aria-label={`Редактировать ${st.name}`}
+                            className="inline-flex text-neutral-600 hover:text-neutral-900 cursor-pointer"
+                          >
+                            <Icon name="edit" className="h-[14px] w-[14px]" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {!streetsLoading && streets.length === 0 && <div className="py-8 text-center text-xs text-neutral-500">Улицы не найдены</div>}
+              </div>
+
+              <Pagination
+                currentPage={streetsPage}
+                totalItems={streetsResult?.total ?? 0}
+                pageSize={STREETS_PAGE_SIZE}
+                onPageChange={setStreetsPage}
+                itemLabel="улиц"
+              />
             </div>
           )}
 
           {activeSubTab === 'contractors' && (
-            <div className="space-y-4">
+            <div className="flex flex-col gap-[14px]">
               {contractors.map((c, i) => {
-                const Icon = CONTRACTOR_ICONS[i % CONTRACTOR_ICONS.length];
-                return (
-                  <div key={c.id} className="bg-white rounded-3xl border border-neutral-200/80 p-5 shadow-sm flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${CONTRACTOR_ICON_STYLES[i % CONTRACTOR_ICON_STYLES.length]}`}>
-                        <Icon className="w-6 h-6" />
+                                return (
+                  <div key={c.id} className="flex min-h-[80px] flex-col gap-3 rounded-xl bg-white p-5 sm:flex-row sm:items-center sm:justify-between shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+                    <div className="flex items-center gap-[14px]">
+                      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${CONTRACTOR_TILE[i % CONTRACTOR_TILE.length]}`}>
+                        <Icon name={TILE_ICON_NAMES[i % TILE_ICON_NAMES.length]} className="h-5 w-5 text-neutral-900" />
                       </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2 text-base font-bold leading-6 text-neutral-800">
                           {c.name}
-                          {!c.is_active && (
-                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-neutral-200 text-neutral-600">отключён</span>
-                          )}
-                        </h3>
-                        <div className="text-xs text-neutral-400 mt-1 font-light">
-                          {[c.phone, c.email].filter(Boolean).join(' · ') || 'Контакты не указаны'}
+                          {!c.is_active && <span className="rounded bg-neutral-200 px-2 py-0.5 text-[11px] font-bold text-neutral-600">отключён</span>}
+                        </div>
+                        <div className="flex items-center gap-4 pt-1 text-xs text-neutral-600">
+                          <span className="flex items-center gap-1.5">
+                            <Icon name="contact" className="h-[13px] w-[13px] text-red-700" />
+                            Контакт подрядчика: {contacts[c.id] ?? '—'}
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <Icon name="phone" className="h-3 w-3 text-red-700" />
+                            {c.phone || '—'}
+                          </span>
                         </div>
                       </div>
                     </div>
 
-                    <span
-                      className={`text-xs font-semibold px-3 py-1 rounded-full ${
-                        c.zone ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'
-                      }`}
+                    <IconSelect
+                      iconName="field-district"
+                      className="w-full shrink-0 sm:w-[208px]"
+                      ariaLabel={`Район для ${c.name}`}
+                      value={draft[c.id] != null ? String(draft[c.id]) : ''}
+                      onChange={(v) => setContractorDistrict(c.id, v)}
+                      placeholder="Выберите район..."
                     >
-                      {c.zone ? 'Зона задана' : 'Зона не задана'}
-                    </span>
+                      {districts.map((d) => (
+                        <option key={d.id} value={String(d.id)}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </IconSelect>
                   </div>
                 );
               })}
-              {contractors.length === 0 && <div className="text-xs text-neutral-400 font-light">Подрядчиков пока нет</div>}
-              <p className="text-xs text-neutral-400">
-                Подрядчиков и границы их зон (GeoJSON) редактируют в разделе «Подрядчики».
-              </p>
+              {contractors.length === 0 && <div className="text-xs text-neutral-500">Подрядчиков пока нет</div>}
             </div>
           )}
         </div>
 
-        {activeSubTab === 'deadlines' && (
-          <div className="flex flex-col items-center gap-3 pt-8">
-            {notice && (
-              <div
-                role="status"
-                className={`px-4 py-2.5 rounded-xl text-xs font-medium border ${
-                  notice.type === 'error'
-                    ? 'bg-red-50 border-red-200 text-red-800'
-                    : notice.type === 'ok'
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                    : 'bg-amber-50 border-amber-200 text-amber-900'
-                }`}
-              >
-                {notice.text}
-              </div>
-            )}
-            <button
-              onClick={handleSave}
-              disabled={isSaving || streetGroups.length === 0}
-              className="px-8 py-3.5 bg-red-700 hover:bg-red-800 text-white rounded-2xl text-sm font-bold shadow-md flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
-            >
-              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              <span>Сохранить параметры</span>
-            </button>
+        {(activeSubTab === 'deadlines' || activeSubTab === 'contractors') && (
+          <div className="flex flex-col items-center gap-3 pt-4">
+            {noticeBox}
+            {activeSubTab === 'deadlines'
+              ? saveButton(handleSave, isSaving, streetGroups.length === 0)
+              : saveButton(handleSaveContractors, false, contractors.length === 0)}
           </div>
         )}
-        {activeSubTab === 'streets' && notice?.type === 'error' && (
-          <div className="pt-4 text-xs font-medium text-red-700 text-center">{notice.text}</div>
-        )}
+        {activeSubTab === 'streets' && notice?.type === 'error' && <div className="pt-4 flex justify-center">{noticeBox}</div>}
       </div>
 
       {streetModal && (
@@ -559,7 +492,7 @@ export default function AdminPage() {
                 {streetModal.mode === 'edit' ? 'Редактирование улицы' : 'Новая улица'}
               </h3>
               <button onClick={() => setStreetModal(null)} aria-label="Закрыть" className="p-1 rounded-full hover:bg-neutral-100 text-neutral-400 font-bold">
-                <X className="w-5 h-5" />
+                <CloseIcon className="w-5 h-5" />
               </button>
             </div>
 

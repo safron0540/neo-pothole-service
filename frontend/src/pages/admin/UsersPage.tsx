@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { UserPlus, X } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
 import { api } from '../../api';
 import type { AnyRole, Role, UserOut } from '../../api';
 import { useReference } from '../../data/useReference';
+import { useMe } from '../../data/useMe';
 
+import { Icon } from '../../components/Icon';
+import { CloseIcon } from '../../components/UiIcons';
 const ROLE_LABEL: Record<AnyRole, string> = { dispatcher: 'Диспетчер', contractor: 'Подрядчик', citizen: 'Гражданин' };
 const PAGE_SIZE = 4;
 
@@ -15,6 +17,7 @@ const initialsOf = (u: UserOut) => `${u.last_name[0] ?? ''}${u.first_name[0] ?? 
 
 export default function UsersPage() {
   const { contractors } = useReference();
+  const me = useMe();
 
   const [roleFilter, setRoleFilter] = useState<'all' | Role>('all');
   const [page, setPage] = useState(1);
@@ -29,7 +32,10 @@ export default function UsersPage() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.getUsers({ role: 'dispatcher', limit: 200 }), api.getUsers({ role: 'contractor', limit: 200 })])
+    Promise.all([
+      api.getUsers({ role: 'dispatcher', is_active: true, limit: 200 }),
+      api.getUsers({ role: 'contractor', is_active: true, limit: 200 }),
+    ])
       .then(([d, c]) => !cancelled && setResult({ tick, users: [...d.items, ...c.items] }))
       .catch((err: unknown) => !cancelled && setResult({ tick, users: [], error: errorText(err) }));
     return () => {
@@ -82,36 +88,17 @@ export default function UsersPage() {
     }
   };
 
-  // ---- Отключение / включение (удаления в API нет) ----
-  const toggleActive = async (user: UserOut) => {
-    const action = user.is_active ? 'отключить' : 'включить';
-    if (!confirm(`Вы действительно хотите ${action} пользователя ${fullName(user)}?`)) return;
+  // ---- Удаление ----
+  // В контракте API v1 пользователя нельзя удалить физически: «Удалить» отключает учётную запись (is_active = false),
+  // и она пропадает из списка.
+  const deleteUser = async (user: UserOut) => {
+    if (!confirm(`Удалить пользователя ${fullName(user)}?`)) return;
     setPageError(null);
     try {
-      await api.updateUser(user.id, { is_active: !user.is_active });
+      await api.updateUser(user.id, { is_active: false });
       setTick((t) => t + 1);
     } catch (err) {
       setPageError(errorText(err));
-    }
-  };
-
-  // ---- Новый пароль ----
-  const [resetTarget, setResetTarget] = useState<UserOut | null>(null);
-  const [newPassword, setNewPassword] = useState('');
-  const [resetError, setResetError] = useState<string | null>(null);
-  const [resetDone, setResetDone] = useState<string | null>(null);
-
-  const submitReset = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!resetTarget) return;
-    if (!newPassword) return setResetError('Введите пароль.');
-    try {
-      await api.resetUserPassword(resetTarget.id, newPassword);
-      setResetDone(`Пароль пользователя ${fullName(resetTarget)} изменён.`);
-      setResetTarget(null);
-      setNewPassword('');
-    } catch (err) {
-      setResetError(errorText(err));
     }
   };
 
@@ -119,7 +106,7 @@ export default function UsersPage() {
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-100 text-neutral-800 antialiased">
-      <header className="px-4 pt-4 pb-3 flex items-start justify-between shrink-0">
+      <header className="px-4 pt-4 pb-3 flex flex-wrap items-start justify-between gap-3 shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 leading-tight">Пользователи системы</h1>
           <p className="text-xs text-neutral-400 mt-1 font-light">Реестр учетных записей сотрудников и роли доступа</p>
@@ -129,126 +116,128 @@ export default function UsersPage() {
           onClick={openCreate}
           className="px-5 py-2.5 bg-red-700 hover:bg-red-800 text-white text-sm font-bold rounded-2xl shadow-md flex items-center gap-2 cursor-pointer"
         >
-          <UserPlus className="w-4 h-4" />
+          <Icon name="user-plus" className="h-[11px] w-[14px]" />
           <span>+ Добавить сотрудника</span>
         </button>
       </header>
 
+      {/* Вкладки в белом блоке на всю ширину, группа вкладок — в серой плашке (макет «Веб/Польз») */}
       <div className="px-4 pb-4 shrink-0">
-        <div className="bg-white rounded-2xl border border-neutral-200/80 p-1.5 inline-flex items-center gap-1 shadow-sm text-xs">
-          {([
-            { id: 'all' as const, label: `Все (${users.length})` },
-            { id: 'dispatcher' as const, label: `Диспетчеры (${dispatchersCount})` },
-            { id: 'contractor' as const, label: `Подрядчики (${contractorsCount})` },
-          ]).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setRoleFilter(tab.id);
-                setPage(1);
-              }}
-              className={`px-4 py-2 rounded-xl font-bold cursor-pointer transition-all ${
-                roleFilter === tab.id ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-500'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex items-center rounded-xl border border-neutral-200 bg-white p-[13px] shadow-[0_1px_3px_rgba(0,0,0,0.05),0_1px_2px_-1px_rgba(0,0,0,0.05)]">
+          <div
+            role="tablist"
+            aria-label="Роль"
+            className="inline-flex items-center gap-1 rounded-lg border border-[rgba(226,232,240,0.7)] bg-[rgba(241,245,249,0.9)] p-[5px]"
+          >
+            {([
+              { id: 'all' as const, label: `Все (${users.length})` },
+              { id: 'dispatcher' as const, label: `Диспетчеры (${dispatchersCount})` },
+              { id: 'contractor' as const, label: `Подрядчики (${contractorsCount})` },
+            ]).map((tab) => {
+              const active = roleFilter === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => {
+                    setRoleFilter(tab.id);
+                    setPage(1);
+                  }}
+                  className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs cursor-pointer transition-colors ${
+                    active ? 'bg-white font-bold text-[#212121]' : 'font-normal text-[#616161] hover:text-[#212121]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        {(pageError || result?.error || resetDone) && (
-          <div className={`mt-3 text-xs font-medium ${resetDone && !pageError && !result?.error ? 'text-emerald-700' : 'text-red-600'}`}>
-            {pageError ?? (result?.error ? `Не удалось загрузить пользователей: ${result.error}` : resetDone)}
+        {(pageError || result?.error) && (
+          <div className="mt-3 text-xs font-medium text-red-600">
+            {pageError ?? `Не удалось загрузить пользователей: ${result?.error}`}
           </div>
         )}
       </div>
 
       <div className="flex-1 px-4 pb-4 overflow-hidden flex flex-col">
-        <div className="bg-white rounded-3xl border border-neutral-200/80 shadow-sm p-6 flex-1 flex flex-col justify-between overflow-hidden">
-          <div className="overflow-y-auto">
-            <table className="w-full text-left text-xs">
+        <div className="flex flex-1 flex-col justify-between overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05),0_1px_2px_-1px_rgba(0,0,0,0.05)]">
+          <div className="overflow-auto">
+            <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-neutral-100 text-neutral-400 uppercase font-semibold text-xs tracking-wider pb-3">
-                  <th className="py-2 px-3">Сотрудник</th>
-                  <th className="py-2 px-3 text-center">Роль</th>
-                  <th className="py-2 px-3 text-right">Действия</th>
+                <tr className="border-b border-neutral-200 bg-[rgba(248,250,252,0.8)] text-[11px] font-bold uppercase tracking-[0.55px] text-[#212121]">
+                  <th className="px-5 py-5 font-bold">Сотрудник</th>
+                  <th className="px-4 py-5 font-bold">Роль</th>
+                  <th className="px-5 py-5 text-right font-bold">Действия</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {pagedUsers.map((user) => (
-                  <tr key={user.id} className={`hover:bg-neutral-50/70 transition-colors ${user.is_active ? '' : 'opacity-60'}`}>
-                    <td className="py-4 px-3">
-                      <div className="flex items-center gap-3.5">
-                        <div
-                          className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-sm ${
-                            user.role === 'dispatcher' ? 'bg-neutral-200 text-neutral-700' : 'bg-orange-100 text-orange-800'
-                          }`}
-                        >
-                          {initialsOf(user)}
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold text-neutral-900">
-                            {fullName(user)}
-                            {!user.is_active && (
-                              <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded bg-neutral-200 text-neutral-600">
-                                отключён
-                              </span>
-                            )}
+              <tbody>
+                {pagedUsers.map((user) => {
+                  const isMe = me?.id === user.id;
+                  const isDispatcher = user.role === 'dispatcher';
+                  return (
+                    <tr key={user.id} className="border-b border-neutral-200 transition-colors hover:bg-neutral-100/50">
+                      <td className="px-5 py-5">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                              isMe
+                                ? 'bg-gradient-to-tr from-[#9F0E00] to-[#C42915] text-white'
+                                : isDispatcher
+                                ? 'bg-neutral-200 text-[#616161]'
+                                : 'bg-[#FFE8DE] text-[#9E4123]'
+                            }`}
+                          >
+                            {initialsOf(user)}
                           </div>
-                          <div className="text-neutral-400 text-xs mt-0.5 font-light">{user.login}</div>
+                          <div className="min-w-0">
+                            <div className="text-[13px] font-bold leading-[18px] text-[#212121]">{fullName(user)}</div>
+                            <div className="pt-1 text-[11px] leading-[14px] text-[#212121]">{user.login}</div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    <td className="py-4 px-3 text-center">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-                          user.role === 'dispatcher' ? 'bg-blue-50 text-blue-900' : 'bg-orange-50 text-orange-800'
-                        }`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${user.role === 'dispatcher' ? 'bg-blue-900' : 'bg-orange-600'}`}></span>
-                        <span>{ROLE_LABEL[user.role]}</span>
-                      </span>
-                    </td>
-
-                    <td className="py-4 px-3 text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            setResetTarget(user);
-                            setNewPassword('');
-                            setResetError(null);
-                            setResetDone(null);
-                          }}
-                          className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-sm font-bold cursor-pointer"
-                        >
-                          Сменить пароль
-                        </button>
-                        <button
-                          onClick={() => toggleActive(user)}
-                          className={`px-5 py-2 rounded-xl text-sm font-bold cursor-pointer text-white ${
-                            user.is_active ? 'bg-red-700 hover:bg-red-800' : 'bg-emerald-700 hover:bg-emerald-800'
+                      <td className="px-4 py-5">
+                        <span
+                          className={`inline-flex h-[26px] items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-bold text-[#212121] ${
+                            isDispatcher
+                              ? 'border-[rgba(191,219,254,0.6)] bg-[#eff6ff]'
+                              : 'border-[rgba(214,107,73,0.3)] bg-[#FFF3EE]'
                           }`}
                         >
-                          {user.is_active ? 'Отключить' : 'Включить'}
+                          <span className={`h-1.5 w-1.5 rounded-full ${isDispatcher ? 'bg-[#212121]' : 'bg-orange-500'}`} />
+                          {ROLE_LABEL[user.role]}
+                        </span>
+                      </td>
+
+                      <td className="px-5 py-5 text-right">
+                        <button
+                          onClick={() => deleteUser(user)}
+                          className="h-[29px] w-[165px] rounded-lg bg-red-700 text-[13px] font-bold text-white shadow-[0_1px_1px_rgba(196,41,21,0.3)] transition-colors hover:bg-red-800 cursor-pointer"
+                        >
+                          Удалить
                         </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             {!isLoading && pagedUsers.length === 0 && (
-              <div className="py-10 text-center text-xs text-neutral-400 font-light">Сотрудников нет</div>
+              <div className="py-10 text-center text-xs text-neutral-500">Сотрудников нет</div>
             )}
           </div>
 
-          <Pagination
-            currentPage={page}
-            totalItems={filteredUsers.length}
-            pageSize={PAGE_SIZE}
-            onPageChange={setPage}
-            itemLabel="сотрудников"
-          />
+          <div className="border-t border-neutral-200 px-5 py-3">
+            <Pagination
+              currentPage={page}
+              totalItems={filteredUsers.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+              itemLabel="сотрудников"
+            />
+          </div>
         </div>
       </div>
 
@@ -258,7 +247,7 @@ export default function UsersPage() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-neutral-900">Новый сотрудник</h3>
               <button onClick={() => setIsModalOpen(false)} aria-label="Закрыть" className="p-1 rounded-full hover:bg-neutral-100 text-neutral-400 font-bold">
-                <X className="w-5 h-5" />
+                <CloseIcon className="w-5 h-5" />
               </button>
             </div>
 
@@ -363,43 +352,6 @@ export default function UsersPage() {
         </div>
       )}
 
-      {resetTarget && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-neutral-200">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-neutral-900">Новый пароль</h3>
-              <button onClick={() => setResetTarget(null)} aria-label="Закрыть" className="p-1 rounded-full hover:bg-neutral-100 text-neutral-400 font-bold">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={submitReset} className="space-y-3.5 text-xs" noValidate>
-              <p className="text-neutral-500">{fullName(resetTarget)}</p>
-              <input
-                type="password"
-                autoFocus
-                autoComplete="new-password"
-                placeholder="Новый пароль"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className={inputClass}
-              />
-              {resetError && <div className="text-red-600 font-medium">{resetError}</div>}
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setResetTarget(null)}
-                  className="flex-1 py-2.5 border border-neutral-200 rounded-xl font-bold text-neutral-600 cursor-pointer"
-                >
-                  Отмена
-                </button>
-                <button type="submit" className="flex-1 py-2.5 bg-red-700 text-white rounded-xl font-bold cursor-pointer">
-                  Сохранить
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

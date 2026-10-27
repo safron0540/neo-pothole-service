@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Camera, ImageOff, Check, ArrowRight, ArrowLeft, MapPin, Loader2, Clock, User, ChevronRight } from 'lucide-react';
 import { Pagination } from "../../components/Pagination";
 import logoSvg from "../../assets/logo.svg";
 import { api } from "../../api";
@@ -7,8 +6,10 @@ import type { ContractorRequestOut, RequestSummary } from "../../api";
 import { useMe, shortName } from "../../data/useMe";
 import { STATUS_COLOR } from "../../data/reference";
 import { DEFECT_CLASS_LABEL } from "../../data/reference";
-import { formatDateTime, formatDayTime, formatDeadlineShort, formatDueLabel, remainingDetailed } from "../../utils/format";
+import { Icon } from "../../components/Icon";
+import { formatDateTime, formatDayTime, formatDeadlineShort, formatDueLabel, remainingDetailed, splitAddress } from "../../utils/format";
 
+import { ImageOffIcon, Spinner } from '../../components/UiIcons';
 type Notice = { type: 'ok' | 'error'; text: string } | null;
 
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // до 10 МБ
@@ -168,7 +169,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
   const badgeFor = (t: RequestSummary): { label: string; cls: string } => {
     if (t.is_overdue) return { label: 'Просрочен', cls: 'bg-[#FFDAD6] text-red-700' };
     if (t.status.code !== 'done' && remainingDetailed(t.planned_due_at).urgent) {
-      return { label: 'Срочно', cls: 'bg-[#FFDBD0] text-[#7F2B0D]' };
+      return { label: 'Срочно', cls: 'bg-[#FFDAD6] text-red-700' };
     }
     return { label: 'В плане', cls: 'bg-neutral-100 text-neutral-600' };
   };
@@ -177,7 +178,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
   // Шапка из макета «Веб/Подрядчики_Главный»: 64 px, полупрозрачная, имя справа с вертикальной чертой
   const header = (
     <header className="shrink-0 border-b border-neutral-200 bg-white py-[7px]">
-      <div className="flex h-16 items-center justify-between bg-[rgba(250,248,255,0.8)] px-6 shadow-[0_1px_8px_rgba(0,0,0,0.04)] backdrop-blur-[12px]">
+      <div className="flex h-16 items-center justify-between bg-[rgba(250,248,255,0.8)] px-4 sm:px-6 shadow-[0_1px_8px_rgba(0,0,0,0.04)] backdrop-blur-[12px]">
         <div className="flex items-center gap-[5px]">
           <img src={logoSvg} alt="NEO-СЕРВИС" className="h-9 w-[27px] shrink-0 object-contain" />
           <div className="text-xs font-light leading-normal text-black">
@@ -187,14 +188,12 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
           </div>
         </div>
 
-        <div className="flex h-9 items-center gap-3 border-l border-[#DAE2FD] pl-[21px]">
+        <div className="flex h-9 items-center gap-3 border-l border-[#DAE2FD] pl-3 sm:pl-[21px]">
           <div className="text-right leading-tight">
             <div className="text-sm font-bold text-[#131B2E]">{shortName(me)}</div>
-            <div className="text-xs text-neutral-800">Мастер участка. Подрядчик</div>
+            <div className="hidden text-xs text-neutral-800 sm:block">Мастер участка. Подрядчик</div>
           </div>
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-700 text-white">
-            <User className="h-3 w-3" />
-          </div>
+          <Icon name="user-avatar" />
           <button
             onClick={onLogout}
             className="ml-1 text-xs text-neutral-600 hover:text-red-700 cursor-pointer transition-colors"
@@ -216,15 +215,15 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
     return (
       <div className="min-h-screen w-full bg-white text-neutral-800 antialiased flex flex-col">
         {header}
-        <main className="flex-1 overflow-y-auto bg-neutral-100 px-8 pb-8 pt-6">
+        <main className="flex-1 overflow-y-auto bg-neutral-100 px-4 pb-8 pt-6 sm:px-8">
           <div className="mx-auto flex max-w-[1302px] flex-col gap-6">
-            <div className="flex h-16 items-center justify-between rounded-xl bg-white px-4 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+            <div className="flex min-h-[64px] flex-wrap items-center justify-between gap-3 rounded-xl bg-white px-4 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
               <div className="flex items-center gap-4">
                 <button
                   onClick={closeTask}
                   className="flex items-center gap-2 text-sm font-normal text-neutral-800 hover:text-red-700 cursor-pointer"
                 >
-                  <ArrowLeft className="h-4 w-4" />
+                  <Icon name="arrow-left" className="h-4 w-4" />
                   <span>Назад к списку заявок</span>
                 </button>
                 <span className="h-6 w-px bg-neutral-200" />
@@ -234,7 +233,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
 
               {!isDone && selectedTask.planned_due_at && (
                 <div className="flex h-8 items-center gap-2 rounded-lg bg-neutral-100 px-3 text-xs text-red-700">
-                  <Clock className="h-3.5 w-3.5" />
+                  <Icon name="clock" className="h-3.5 w-3.5" />
                   <span>
                     Срок : {formatDeadlineShort(selectedTask.planned_due_at)} ({due.label.toLowerCase()})
                   </span>
@@ -242,7 +241,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
               )}
             </div>
 
-            <div className="grid grid-cols-2 items-start gap-6">
+            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
               <div className="flex flex-col gap-6">
                 <section className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
                   <div className="flex items-start justify-between">
@@ -256,7 +255,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
 
                   <div className="mt-4 rounded-xl bg-neutral-100 p-4">
                     <div className="flex items-start gap-2">
-                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+                      <Icon name="gps-pin" className="mt-0.5 h-[19px] w-[13px] shrink-0 text-red-700" />
                       <div>
                         <div className="text-sm font-bold text-neutral-800">
                           {selectedTask.address ? `г. Томск, ${selectedTask.address}` : 'Адрес не определён'}
@@ -287,11 +286,11 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                       <img src={beforeUrl} alt="До ремонта" className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full items-center justify-center text-neutral-400">
-                        <ImageOff className="h-12 w-12" />
+                        <ImageOffIcon className="h-12 w-12" />
                       </div>
                     )}
                     <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-black/50 to-transparent px-4 pb-3 pt-8 text-xs text-white/90">
-                      <Clock className="h-3 w-3" />
+                      <Icon name="photo-time" className="h-[13px] w-[13px]" />
                       {formatDateTime(selectedTask.detected_at)}
                     </div>
                   </div>
@@ -311,7 +310,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                     <img src={afterUrl} alt="После ремонта" className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center text-neutral-400">
-                      <ImageOff className="mb-2 h-12 w-12" />
+                      <ImageOffIcon className="mb-2 h-12 w-12" />
                       <span className="text-xs font-light">Фотография ещё не загружена</span>
                     </div>
                   )}
@@ -322,7 +321,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                 {!isDone && (
                   <>
                     <label className="mt-2 flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-neutral-100 text-sm font-bold text-neutral-800 transition-colors hover:bg-neutral-200">
-                      <Camera className="h-4 w-4" />
+                      <Icon name="camera" className="h-[14px] w-[15px]" />
                       <span>{afterPhotoPreview ? 'Заменить фото' : 'Загрузить фото'}</span>
                       <input type="file" accept="image/jpeg,image/png" onChange={handlePhotoUpload} className="hidden" />
                     </label>
@@ -337,10 +336,10 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                       }`}
                     >
                       {isSubmitting ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Spinner className="h-4 w-4 animate-spin" />
                       ) : (
                         <>
-                          <Check className="h-4 w-4" />
+                          <Icon name="confirm-check" className="h-[18px] w-[18px]" />
                           <span>Подтвердить статус «Выполнено»</span>
                         </>
                       )}
@@ -366,7 +365,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
               <h1 className="text-2xl font-bold leading-tight text-neutral-800">Мои заявки</h1>
               {orgName && <p className="text-sm text-neutral-600">{orgName}</p>}
             </div>
-            {isLoading && <Loader2 className="h-4 w-4 animate-spin text-red-700" />}
+            {isLoading && <Spinner className="h-4 w-4 animate-spin text-red-700" />}
           </div>
 
           {(notice || listState?.error) && (
@@ -383,7 +382,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
           )}
 
           <div className="rounded-xl bg-white p-4 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
-            <div className="flex items-center gap-1 pb-1">
+            <div className="flex flex-wrap items-center gap-1 pb-1">
               {TABS.map((tab) => {
                 const active = activeFilter === tab.id;
                 const isOverdueTab = tab.id === 'overdue';
@@ -418,12 +417,12 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
           </div>
 
           <div className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-            <div className="grid grid-cols-[286px_1fr_1fr_253px_1fr] items-center bg-neutral-100 px-[11px] py-2 text-[11px] font-bold uppercase tracking-[0.55px] text-neutral-600">
+            <div className="hidden lg:grid grid-cols-[286px_1fr_1fr_253px_1fr] items-center bg-neutral-100 px-[11px] py-2 text-[11px] font-bold uppercase tracking-[0.55px] text-neutral-600">
               <div>ID/ статус</div>
               <div>Адрес дефекта</div>
               <div>Плановый срок</div>
               <div className="text-center">Статус заявки</div>
-              <div className="text-right">Действие</div>
+              <div className="text-center">Действие</div>
             </div>
 
             {pagedTasks.map((t) => {
@@ -433,7 +432,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
               return (
                 <div
                   key={t.id}
-                  className={`grid grid-cols-[286px_1fr_1fr_253px_1fr] items-start px-6 py-4 transition-colors hover:bg-neutral-100/60 ${
+                  className={`grid grid-cols-1 gap-2 border-b border-neutral-100 lg:gap-0 lg:border-0 lg:grid-cols-[286px_1fr_1fr_253px_1fr] items-start px-4 lg:px-6 py-4 transition-colors hover:bg-neutral-100/60 ${
                     !t.is_overdue && rem.urgent ? 'bg-[rgba(242,243,255,0.4)]' : ''
                   }`}
                 >
@@ -446,8 +445,10 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                   </div>
 
                   <div className="flex min-w-0 flex-col pr-4">
-                    <span className="truncate text-sm font-bold leading-5 text-neutral-800">{t.address ?? '—'}</span>
-                    <span className="text-xs text-neutral-600">{DEFECT_CLASS_LABEL[t.defect_class]} яма</span>
+                    <span className="truncate text-sm font-bold leading-5 text-neutral-800">{splitAddress(t.address).street}</span>
+                    {splitAddress(t.address).district && (
+                      <span className="truncate text-xs text-neutral-600">{splitAddress(t.address).district}</span>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-0.5">
@@ -455,18 +456,18 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                     {t.status.code !== 'done' && (
                       <span
                         className={`text-xs ${hot ? 'font-bold' : 'font-normal text-neutral-600'}`}
-                        style={hot ? { color: t.is_overdue ? '#BA1A1A' : '#9E4123' } : undefined}
+                        style={hot ? { color: '#C42915' } : undefined}
                       >
                         {rem.label}
                       </span>
                     )}
                   </div>
 
-                  <div className="flex justify-center">
+                  <div className="flex lg:justify-center">
                     <StatusPill code={t.status.code} label={t.status.label} />
                   </div>
 
-                  <div className="flex justify-end">
+                  <div className="flex lg:justify-center">
                     <button
                       onClick={() => openTask(t)}
                       className={`inline-flex h-4 items-center gap-1 text-xs cursor-pointer ${
@@ -474,7 +475,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                       }`}
                     >
                       <span>Открыть</span>
-                      {hot ? <ArrowRight className="h-[11px] w-[11px]" /> : <ChevronRight className="h-3 w-3" />}
+                      {hot ? <Icon name="arrow-right" className="h-[11px] w-[11px]" /> : <Icon name="chevron-right" className="h-3 w-3" />}
                     </button>
                   </div>
                 </div>

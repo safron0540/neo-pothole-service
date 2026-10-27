@@ -1,5 +1,6 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Icon } from './Icon';
+
 
 interface PaginationProps {
   currentPage: number;
@@ -48,7 +49,7 @@ export const Pagination: React.FC<PaginationProps> = ({
       <div className="text-xs font-light text-neutral-700 whitespace-nowrap">
         {totalItems > 0 ? (
           <span>
-            Показано {shown} из {totalItems}
+            Показано {shown} из {totalItems.toLocaleString('ru-RU')}
             {itemLabel ? ` ${itemLabel}` : ''}
           </span>
         ) : (
@@ -65,7 +66,7 @@ export const Pagination: React.FC<PaginationProps> = ({
           onClick={() => onPageChange(currentPage - 1)}
           className={`${square} ${idle} disabled:opacity-40 disabled:cursor-not-allowed`}
         >
-          <ChevronLeft className="w-3.5 h-3.5" />
+          <Icon name="pagination-prev" className="h-[9px] w-[6px]" />
         </button>
 
         {pages.map((p, idx) => {
@@ -97,7 +98,7 @@ export const Pagination: React.FC<PaginationProps> = ({
           onClick={() => onPageChange(currentPage + 1)}
           className={`${square} ${idle} disabled:opacity-40 disabled:cursor-not-allowed`}
         >
-          <ChevronRight className="w-3.5 h-3.5" />
+          <Icon name="pagination-next" className="h-[9px] w-[6px]" />
         </button>
       </div>
     </div>

@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { Camera, ShieldCheck, Loader2, History, ImageOff, ChevronDown, MousePointerClick } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
 import { api, ApiError } from '../../api';
 import type {
@@ -12,13 +11,21 @@ import type {
   StatusCode,
   StreetGroupCode,
 } from '../../api';
-import { DEFECT_CLASS_LABEL, REJECT_REASON_LABEL, STATUS_COLOR, statusLabel } from '../../data/reference';
+import { DEFECT_CLASS_LABEL, STATUS_COLOR, statusLabel } from '../../data/reference';
 import { useReference } from '../../data/useReference';
 import { formatDateTime, formatTime, remainingChip, remainingInfo } from '../../utils/format';
+import { Icon } from '../../components/Icon';
 
+import { CameraIcon, ImageOffIcon, Spinner } from '../../components/UiIcons';
 const PAGE_SIZE = 4;
 
-type SortBy = 'priority' | 'detected_at';
+type QueueTab = 'new' | 'clarify' | 'overdue';
+
+const QUEUE_TABS: { id: QueueTab; label: string; title: string }[] = [
+  { id: 'new', label: 'Новые', title: 'Новые заявки' },
+  { id: 'clarify', label: 'На уточнении', title: 'Ожидают уточнения' },
+  { id: 'overdue', label: 'Просроченные', title: 'Просроченные заявки' },
+];
 type Notice = { type: 'ok' | 'error' | 'info'; text: string } | null;
 type Decision = Extract<StatusCode, 'accepted' | 'needs_clarification' | 'rejected'>;
 
@@ -36,6 +43,13 @@ const EVENT_LABEL: Record<EventType, string> = {
   note_added: 'Добавлена заметка',
 };
 
+// В макете выбора причины нет, а контракт API требует reject_reason: выводим её автоматически
+function defaultRejectReason(d: DispatcherRequestOut): RejectReason {
+  if (d.duplicate_of_id != null) return 'duplicate';
+  if (d.defect_class === 'small') return 'small_pit';
+  return 'other';
+}
+
 function describeEvent(e: EventOut): string {
   if (e.type === 'status_changed') {
     const from = typeof e.payload.from === 'string' ? statusLabel(e.payload.from) : null;
@@ -52,13 +66,13 @@ interface DispatcherPageProps {
 
 export default function DispatcherPage({ focusRequestId = null }: DispatcherPageProps) {
   const [notice, setNotice] = useState<Notice>(null);
-  const [sortBy, setSortBy] = useState<SortBy>('priority');
+  const [queueTab, setQueueTab] = useState<QueueTab>('new');
   const [page, setPage] = useState(1);
   const [queueTick, setQueueTick] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(focusRequestId);
 
   // ---- Очередь «На проверке»: сортировку и страницы делает бэкенд ----
-  const queueKey = `${sortBy}|${page}|${queueTick}`;
+  const queueKey = `${queueTab}|${page}|${queueTick}`;
   const [queue, setQueue] = useState<{
     key: string;
     items: DispatcherRequestSummary[];
@@ -70,8 +84,10 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
     let cancelled = false;
     api
       .getRequests({
-        status: ['on_review'],
-        sort: sortBy,
+        // «Новые» — на проверке; «На уточнении» — ждут ответа заявителя; «Просроченные» — оба статуса с просроченным сроком
+        status: queueTab === 'clarify' ? ['needs_clarification'] : queueTab === 'overdue' ? ['on_review', 'needs_clarification'] : ['on_review'],
+        overdue: queueTab === 'overdue' ? true : undefined,
+        sort: 'priority',
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
       })
@@ -90,7 +106,7 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
     return () => {
       cancelled = true;
     };
-  }, [queueKey, sortBy, page]);
+  }, [queueKey, queueTab, page]);
 
   const isQueueLoading = queue?.key !== queueKey;
   const items = queue?.items ?? [];
@@ -154,32 +170,17 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
   // Макет «Веб/Треб_панель»: заголовок 42 px, колонки 327 px + 40 px зазор + карточка, поля 24 px
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-100 text-neutral-800 antialiased">
-      <header className="h-[42px] px-6 flex items-center justify-between shrink-0 border-b border-neutral-200">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold leading-none text-neutral-800">Требует решения: Новые заявки</h1>
-          {isQueueLoading && <Loader2 className="w-4 h-4 animate-spin text-red-700" />}
-        </div>
-
-        <div className="flex items-center gap-2 text-xs">
-          <span className="font-light text-neutral-600">Сортировка:</span>
-          <select
-            value={sortBy}
-            onChange={(e) => {
-              setSortBy(e.target.value as SortBy);
-              setPage(1);
-            }}
-            className="h-7 px-2 bg-white border border-neutral-400 rounded-lg text-xs outline-none focus:border-red-700"
-          >
-            <option value="priority">По срочности ГОСТ (приоритет)</option>
-            <option value="detected_at">По дате подачи</option>
-          </select>
-        </div>
+      <header className="min-h-[42px] px-4 sm:px-6 py-1 flex items-center gap-3 shrink-0 border-b border-neutral-200">
+        <h1 className="text-xl sm:text-2xl font-bold leading-tight text-neutral-800">
+          Требует решения: {QUEUE_TABS.find((tab) => tab.id === queueTab)?.title}
+        </h1>
+        {isQueueLoading && <Spinner className="w-4 h-4 animate-spin text-red-700" />}
       </header>
 
       {shownNotice && (
         <div
           role="status"
-          className={`mx-6 mt-2 px-4 py-2 rounded-xl text-xs border shrink-0 flex items-center justify-between ${
+          className={`mx-4 sm:mx-6 mt-2 px-4 py-2 rounded-xl text-xs border shrink-0 flex items-center justify-between ${
             shownNotice.type === 'error'
               ? 'bg-red-50 border-red-200 text-red-800'
               : shownNotice.type === 'ok'
@@ -194,14 +195,37 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
         </div>
       )}
 
-      <div className="flex-1 min-h-0 px-6 pt-[10px] pb-4 flex gap-10">
-        <section className="w-[327px] shrink-0 min-h-0 flex flex-col gap-[10px]">
+      <div className="flex-1 min-h-0 px-4 sm:px-6 pt-[10px] pb-4 flex flex-col lg:flex-row gap-4 lg:gap-10 overflow-y-auto lg:overflow-hidden">
+        <section className="w-full lg:w-[327px] shrink-0 min-h-0 flex flex-col gap-[10px]">
           <div className="text-xs font-light text-neutral-800 uppercase">Очередь на подтверждение</div>
 
-          <div className="flex flex-col gap-[10px] min-h-0 overflow-y-auto">
+          <div role="tablist" aria-label="Тип заявок" className="flex flex-wrap items-center gap-1 rounded-xl border border-neutral-200 bg-white p-1">
+            {QUEUE_TABS.map((tab) => {
+              const active = queueTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => {
+                    setQueueTab(tab.id);
+                    setPage(1);
+                    setSelectedId(null);
+                  }}
+                  className={`flex-1 whitespace-nowrap px-2 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                    active ? 'bg-red-700 text-white shadow-sm' : 'text-neutral-700 hover:bg-neutral-100'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-col gap-[10px] min-h-0 flex-1 lg:overflow-y-auto">
             {!isQueueLoading && items.length === 0 && (
               <div className="bg-white rounded-xl p-6 border border-neutral-200 text-center text-xs text-neutral-500">
-                Новых заявок нет
+                {queueTab === 'new' ? 'Новых заявок нет' : queueTab === 'clarify' ? 'Нет заявок на уточнении' : 'Просроченных заявок нет'}
               </div>
             )}
             {items.map((item) => {
@@ -226,15 +250,13 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
 
                   <div className="flex items-center gap-3">
                     <div className="w-16 h-16 shrink-0 rounded-lg border border-neutral-200 bg-neutral-100 flex items-center justify-center text-neutral-400">
-                      <Camera className="w-5 h-5" />
+                      <CameraIcon className="w-5 h-5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-sm text-neutral-600">ID {item.id}</div>
                       <div className="text-sm text-[#131B2E] truncate leading-[22px]">{item.address ?? 'Адрес не определён'}</div>
                       <div className="text-xs text-neutral-600 pt-0.5 truncate">
                         {DEFECT_CLASS_LABEL[item.defect_class]} яма
-                        {item.street_group ? '' : ' · группа не определена'}
-                        {item.duplicates_count ? ' · возможный дубликат' : ''}
                       </div>
                     </div>
                   </div>
@@ -243,10 +265,13 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
             })}
           </div>
 
-          <Pagination currentPage={page} totalItems={total} pageSize={PAGE_SIZE} onPageChange={setPage} />
+          {/* Как в макете: плашка «Показано 4 из 8» прижата к низу колонки */}
+          <div className="mt-auto rounded-xl bg-white px-2 py-3 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+            <Pagination currentPage={page} totalItems={total} pageSize={PAGE_SIZE} onPageChange={setPage} />
+          </div>
         </section>
 
-        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto bg-white border border-[#DAE2FD] rounded-2xl shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+        <main className="flex-1 min-w-0 min-h-[320px] lg:min-h-0 overflow-y-auto bg-white border border-[#DAE2FD] rounded-2xl shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
           {current?.detail ? (
             <RequestCard
               key={current.detail.id}
@@ -262,13 +287,11 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
             </div>
           ) : isDetailLoading ? (
             <div className="h-full flex items-center justify-center">
-              <Loader2 className="w-5 h-5 animate-spin text-red-700" />
+              <Spinner className="w-5 h-5 animate-spin text-red-700" />
             </div>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-center px-10">
-              <div className="w-16 h-16 rounded-2xl bg-neutral-200 flex items-center justify-center mb-4">
-                <MousePointerClick className="w-7 h-7 text-red-700" />
-              </div>
+              <Icon name="empty-tap" className="mb-4" />
               <h2 className="text-lg font-bold text-neutral-800">Выберите заявку из списка слева</h2>
               <p className="mt-2 max-w-[360px] text-xs font-light text-neutral-600">
                 Нажмите на заявку из очереди, чтобы просмотреть фотофиксацию, параметры дефекта по ГОСТ и перевести в работу.
@@ -299,14 +322,14 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
   const [selectedClass, setSelectedClass] = useState<DefectClass>(detail.defect_class);
   const [selectedGroup, setSelectedGroup] = useState<StreetGroupCode | ''>(detail.street_group ?? '');
   const [selectedContractorId, setSelectedContractorId] = useState<number | ''>(detail.contractor?.id ?? '');
-  const [rejectReason, setRejectReason] = useState<RejectReason | ''>('');
   const [note, setNote] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
   const submitting = useRef(false);
 
-  const canDecide = detail.status.code === 'on_review';
+  const canDecide = detail.status.code === 'on_review' || detail.status.code === 'needs_clarification';
+  const canAskClarification = detail.status.code === 'on_review';
   const remaining = remainingInfo(detail.planned_due_at);
 
   // Неактивных подрядчиков в выборе не показываем (кроме уже назначенного)
@@ -317,7 +340,6 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
     setFormError(null);
 
     if (to === 'rejected') {
-      if (!rejectReason) return setFormError('Для отклонения выберите причину.');
       if (!note.trim()) return setFormError('Для отклонения заявки укажите комментарий.');
     }
     if (to === 'accepted' && !selectedGroup) {
@@ -342,7 +364,7 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
         to,
         version,
         comment: note.trim() || undefined,
-        reject_reason: to === 'rejected' && rejectReason ? rejectReason : undefined,
+        reject_reason: to === 'rejected' ? defaultRejectReason(detail) : undefined,
       });
       onDecided(detail.id, `Заявка № ${detail.id} переведена в статус «${result.status.label}».`);
     } catch (err) {
@@ -376,22 +398,15 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
           Подано {formatDateTime(detail.detected_at).replace(' ', ' в ')}
         </p>
         {!canDecide && (
-          <p className="text-xs text-amber-800">Заявка не в очереди на проверку — доступен только просмотр.</p>
+          <p className="text-xs text-amber-800">Решение по этой заявке уже принято — доступен только просмотр.</p>
         )}
-        {detail.status.code === 'rejected' && detail.decision_comment && (
-          <p className="text-xs text-neutral-600">
-            Причина отклонения: {detail.reject_reason ? `${REJECT_REASON_LABEL[detail.reject_reason]}. ` : ''}
-            {detail.decision_comment}
-          </p>
-        )}
-        {detail.must_fix && <p className="text-xs text-red-700">Дефект подлежит обязательному устранению.</p>}
         {detail.duplicate_of_id != null && (
           <p className="text-xs text-amber-800">Возможный дубликат заявки № {detail.duplicate_of_id}.</p>
         )}
       </div>
 
-      <div className="grid grid-cols-12 gap-6 items-start">
-        <div className="col-span-5 flex flex-col gap-[7.5px]">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+        <div className="md:col-span-5 flex flex-col gap-[7.5px]">
           <div className="text-sm text-neutral-800">Фото дефекта</div>
           {/* Ссылки на фото подписаны и живут 15 минут — не кэшируем */}
           <div className="h-[224px] rounded-xl border border-neutral-200 bg-neutral-100 overflow-hidden flex items-center justify-center">
@@ -404,7 +419,7 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
               />
             ) : (
               <div className="flex flex-col items-center text-neutral-500 text-center">
-                <ImageOff className="w-10 h-10 mb-2" />
+                <ImageOffIcon className="w-10 h-10 mb-2" />
                 <span className="text-xs uppercase font-bold leading-tight">
                   Фото временно
                   <br />
@@ -414,17 +429,16 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
             )}
           </div>
           <div className="px-1 text-xs text-neutral-600">
-            {detail.applicant ? (
+            {/* Как в макете: «Заявитель: телефон ФИО» под фото. API отдаёт контакты не на всех статусах */}
+            {detail.applicant && (
               <>
                 Заявитель: {detail.applicant.phone} {detail.applicant.last_name} {detail.applicant.first_name}
               </>
-            ) : (
-              <>Заявитель: контакты скрыты до статуса «Требует уточнения»</>
             )}
           </div>
         </div>
 
-        <div className="col-span-7 flex flex-col gap-[10px]">
+        <div className="md:col-span-7 flex flex-col gap-[10px]">
           <div className="bg-neutral-100 rounded-xl p-3 flex flex-col gap-1">
             <div className="text-sm text-neutral-600">Адрес дефекта</div>
             <div className="text-xs font-light text-neutral-800">
@@ -487,7 +501,7 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
           </div>
 
           <div className="bg-neutral-100 border border-neutral-200 rounded-xl p-[15px] flex items-center gap-3">
-            <ShieldCheck className="w-[15px] h-[19px] text-red-700 shrink-0" />
+            <Icon name="shield" className="w-[15px] h-[19px] text-red-700 shrink-0" />
             <span className="text-sm text-neutral-800">Рекомендованный статус: «{detail.recommendation.label}»</span>
           </div>
         </div>
@@ -499,7 +513,7 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
 
       <div className="border-t border-neutral-200 pt-[11px] flex flex-col gap-[10px]">
         <div className="flex items-center gap-1.5 text-sm text-neutral-800">
-          <History className="w-[13px] h-[13px] text-red-700" />
+          <Icon name="history" className="w-[14px] h-[14px] text-red-700" />
           <span>История заявки</span>
         </div>
         {events.length > 0 ? (
@@ -531,40 +545,24 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
           placeholder="Обязателен для статуса «Отклонено»"
           className="h-[46px] w-full resize-none rounded-md border-2 border-neutral-400 bg-white px-3 py-2 text-sm shadow-[0_4px_8px_rgba(0,0,0,0.15)] outline-none placeholder:text-neutral-400 focus:border-red-700 disabled:bg-neutral-100"
         />
-        <div className="flex items-center gap-3 text-xs text-neutral-600">
-          <span>Причина отклонения:</span>
-          <select
-            value={rejectReason}
-            disabled={!canDecide}
-            onChange={(e) => setRejectReason(e.target.value as RejectReason | '')}
-            className="h-8 rounded-lg border border-neutral-400 bg-white px-2 text-xs outline-none focus:border-red-700 disabled:bg-neutral-100"
-          >
-            <option value="">Не выбрана</option>
-            {(Object.keys(REJECT_REASON_LABEL) as RejectReason[]).map((r) => (
-              <option key={r} value={r}>
-                {REJECT_REASON_LABEL[r]}
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
 
       {formError && <div className="text-xs text-red-700">{formError}</div>}
 
-      <div className="border-t border-[#DAE2FD] pt-[11px] flex items-center justify-center gap-3">
+      <div className="border-t border-[#DAE2FD] pt-[11px] flex flex-wrap items-center justify-center gap-3">
         <button
           type="button"
           disabled={isSubmitting || !canDecide}
           onClick={() => handleDecision('accepted')}
-          className="h-[43px] w-[194px] rounded-xl bg-red-700 hover:bg-red-800 text-sm font-normal text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="h-[43px] w-full sm:w-[194px] rounded-xl bg-red-700 hover:bg-red-800 text-sm font-normal text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Подтвердить статус “Принято”
         </button>
         <button
           type="button"
-          disabled={isSubmitting || !canDecide}
+          disabled={isSubmitting || !canAskClarification}
           onClick={() => handleDecision('needs_clarification')}
-          className="h-[43px] w-[187px] rounded-xl bg-neutral-400 hover:bg-neutral-500 text-sm font-normal text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="h-[43px] w-full sm:w-[187px] rounded-xl bg-neutral-400 hover:bg-neutral-500 text-sm font-normal text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Запросить уточнение
         </button>
@@ -572,7 +570,7 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
           type="button"
           disabled={isSubmitting || !canDecide}
           onClick={() => handleDecision('rejected')}
-          className="h-[43px] w-[194px] rounded-xl bg-red-700 hover:bg-red-800 text-sm font-normal text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="h-[43px] w-full sm:w-[194px] rounded-xl bg-red-700 hover:bg-red-800 text-sm font-normal text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Отклонить заявку
         </button>
@@ -609,7 +607,7 @@ function FieldSelect({
         >
           {children}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-[9px] top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-800" />
+        <Icon name="chevron-down" className="pointer-events-none absolute right-[9px] top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-800" />
       </span>
     </label>
   );

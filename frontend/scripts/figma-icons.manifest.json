@@ -1,0 +1,299 @@
+{
+  "fileKey": "LJfReSZ8XiEWtUEuQqznp0",
+  "comment": "name — имя файла src/assets/icons/<name>.svg и значение пропса name у <Icon>. node — узел в Figma. recolor: true — цвета заменяются на currentColor.",
+  "icons": [
+    {
+      "name": "nav-requests",
+      "node": "I176:1256;12:701;12:697"
+    },
+    {
+      "name": "nav-map",
+      "node": "I176:1257;12:701;12:697"
+    },
+    {
+      "name": "nav-planned",
+      "node": "I176:1258;12:697"
+    },
+    {
+      "name": "nav-reports",
+      "node": "I176:1259;12:701;12:697"
+    },
+    {
+      "name": "nav-contractors",
+      "node": "I176:1260;12:701;12:697"
+    },
+    {
+      "name": "nav-admin",
+      "node": "I176:1261;12:701;12:697"
+    },
+    {
+      "name": "nav-users",
+      "node": "I176:1262;12:701;12:697"
+    },
+    {
+      "name": "user-avatar",
+      "node": "97:1884"
+    },
+    {
+      "name": "pagination-prev",
+      "node": "32:6885"
+    },
+    {
+      "name": "pagination-next",
+      "node": "32:6894"
+    },
+    {
+      "name": "arrow-down",
+      "node": "107:23649"
+    },
+    {
+      "name": "chevron-down",
+      "node": "35:8709"
+    },
+    {
+      "name": "info",
+      "node": "35:8745"
+    },
+    {
+      "name": "map-pin",
+      "node": "36:10065"
+    },
+    {
+      "name": "shield",
+      "node": "32:6219"
+    },
+    {
+      "name": "history",
+      "node": "32:6228"
+    },
+    {
+      "name": "empty-tap",
+      "node": "32:6041"
+    },
+    {
+      "name": "map-heat",
+      "node": "28:5696",
+      "recolor": true
+    },
+    {
+      "name": "map-markers",
+      "node": "28:5702",
+      "recolor": true
+    },
+    {
+      "name": "map-zones",
+      "node": "28:5707",
+      "recolor": true
+    },
+    {
+      "name": "reload",
+      "node": "28:5691"
+    },
+    {
+      "name": "close",
+      "node": "32:6307"
+    },
+    {
+      "name": "pin-address",
+      "node": "32:6323"
+    },
+    {
+      "name": "group-street",
+      "node": "32:6331"
+    },
+    {
+      "name": "clock-planned",
+      "node": "32:6339"
+    },
+    {
+      "name": "legend-flame",
+      "node": "32:6400"
+    },
+    {
+      "name": "add-plus",
+      "node": "106:23625"
+    },
+    {
+      "name": "close-small",
+      "node": "33:7362"
+    },
+    {
+      "name": "check-circle",
+      "node": "33:7367"
+    },
+    {
+      "name": "empty-tap-plan",
+      "node": "32:6817"
+    },
+    {
+      "name": "tab-chart",
+      "node": "36:10186",
+      "recolor": true
+    },
+    {
+      "name": "tab-timer",
+      "node": "36:10191",
+      "recolor": true
+    },
+    {
+      "name": "sliders",
+      "node": "35:8684"
+    },
+    {
+      "name": "reset-small",
+      "node": "35:8691"
+    },
+    {
+      "name": "field-calendar",
+      "node": "35:8706"
+    },
+    {
+      "name": "field-category",
+      "node": "35:8717"
+    },
+    {
+      "name": "field-district",
+      "node": "35:8728"
+    },
+    {
+      "name": "field-contractor",
+      "node": "35:8739"
+    },
+    {
+      "name": "report-chart",
+      "node": "35:8750"
+    },
+    {
+      "name": "empty-reports",
+      "node": "35:8799"
+    },
+    {
+      "name": "badge-filter",
+      "node": "35:8802"
+    },
+    {
+      "name": "refresh",
+      "node": "33:7792"
+    },
+    {
+      "name": "file",
+      "node": "33:7799"
+    },
+    {
+      "name": "download",
+      "node": "33:7809"
+    },
+    {
+      "name": "export-excel",
+      "node": "33:7854"
+    },
+    {
+      "name": "kpi-total",
+      "node": "33:7822"
+    },
+    {
+      "name": "kpi-on-time",
+      "node": "33:7833"
+    },
+    {
+      "name": "kpi-time",
+      "node": "33:7843"
+    },
+    {
+      "name": "calendar",
+      "node": "36:9120"
+    },
+    {
+      "name": "ctr-kpi-requests",
+      "node": "36:9979"
+    },
+    {
+      "name": "ctr-kpi-on-time",
+      "node": "36:9998"
+    },
+    {
+      "name": "ctr-kpi-time",
+      "node": "36:10015"
+    },
+    {
+      "name": "empty-contractor",
+      "node": "36:9358"
+    },
+    {
+      "name": "badge-check",
+      "node": "36:9362"
+    },
+    {
+      "name": "plus-circle",
+      "node": "37:10878"
+    },
+    {
+      "name": "ruler",
+      "node": "37:10918"
+    },
+    {
+      "name": "edit",
+      "node": "37:10948"
+    },
+    {
+      "name": "tile-tools",
+      "node": "38:12517"
+    },
+    {
+      "name": "tile-truck",
+      "node": "38:12568"
+    },
+    {
+      "name": "tile-excavator",
+      "node": "38:12617"
+    },
+    {
+      "name": "contact",
+      "node": "38:12531"
+    },
+    {
+      "name": "phone",
+      "node": "38:12535"
+    },
+    {
+      "name": "save-check",
+      "node": "38:13215"
+    },
+    {
+      "name": "user-plus",
+      "node": "36:10417"
+    },
+    {
+      "name": "arrow-left",
+      "node": "39:14461"
+    },
+    {
+      "name": "arrow-right",
+      "node": "39:14062"
+    },
+    {
+      "name": "chevron-right",
+      "node": "39:14132"
+    },
+    {
+      "name": "clock",
+      "node": "39:14473"
+    },
+    {
+      "name": "gps-pin",
+      "node": "39:14488"
+    },
+    {
+      "name": "photo-time",
+      "node": "39:14548"
+    },
+    {
+      "name": "camera",
+      "node": "39:14583"
+    },
+    {
+      "name": "confirm-check",
+      "node": "39:14619"
+    }
+  ]
+}

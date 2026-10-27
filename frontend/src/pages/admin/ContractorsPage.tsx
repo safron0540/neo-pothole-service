@@ -1,12 +1,15 @@
 import { useState, useMemo, useEffect, type FormEvent } from 'react';
-import { Calendar, MapPin, HardHat, Smartphone, Timer, Pencil, X } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
 import { api } from '../../api';
 import type { ContractorIn, ContractorOut, GeoMultiPolygon } from '../../api';
 import { useReference } from '../../data/useReference';
+import { useContractorDistricts } from '../../data/contractorDistricts';
+import { useContractorContacts } from '../../data/useContractorContacts';
+import { shortDistrict } from '../../utils/format';
 
-// ДЕМО: показатели и история заявок появятся с этапом 2 API (отчёты, рейтинг).
-// Пока одинаковые для всех подрядчиков — не использовать как реальные данные.
+import { Icon } from '../../components/Icon';
+import { CloseIcon } from '../../components/UiIcons';
+// Показатели и история заявок появятся с этапом 2 API (отчёты, рейтинг): пока одинаковые для всех подрядчиков
 const DEMO_STATS = {
   total: 142,
   closed: 138,
@@ -18,21 +21,18 @@ const DEMO_STATS = {
 };
 
 interface DemoTask {
-  id: string;
-  dateAssigned: string;
   address: string;
+  assigned: string;
   duration: string;
-  normTime: string;
-  isOverdue?: boolean;
-  overdueTime?: string;
+  overdueBy?: string;
   status: 'Выполнено' | 'В работе';
 }
 
 const DEMO_TASKS: DemoTask[] = [
-  { id: '№ ЗЯ-2024-0912', dateAssigned: '28.04.2025, 14:32', address: 'ул. Вершинина, 24', duration: '14 ч 20 мин', normTime: 'Норма: 24 ч', status: 'Выполнено' },
-  { id: '№ ЗЯ-2024-0908', dateAssigned: '26.04.2025, 09:15', address: 'Иркутский тракт, 19', duration: '19 ч 45 мин', normTime: 'Норма: 24 ч', status: 'Выполнено' },
-  { id: '№ ЗЯ-2024-0899', dateAssigned: '24.04.2025, 11:50', address: 'ул. Вершинина, 24', duration: '26 ч 10 мин', normTime: 'Норма: 24 ч', isOverdue: true, overdueTime: '+2 ч 10 мин', status: 'В работе' },
-  { id: '№ ЗЯ-2024-0892', dateAssigned: '22.04.2025, 16:00', address: 'ул. Вершинина, 24', duration: '12 ч 10 мин', normTime: 'Норма: 24 ч', status: 'В работе' },
+  { assigned: '28.04.2025, 14:32', address: 'ул. Вершинина, 24', duration: '14 ч 20 мин', status: 'Выполнено' },
+  { assigned: '26.04.2025, 09:15', address: 'Иркутский тракт, 19', duration: '19 ч 45 мин', status: 'Выполнено' },
+  { assigned: '24.04.2025, 11:50', address: 'ул. Вершинина, 24', duration: '26 ч 10 мин', overdueBy: '+2 ч 10 мин', status: 'В работе' },
+  { assigned: '22.04.2025, 16:00', address: 'ул. Вершинина, 24', duration: '12 ч 10 мин', status: 'В работе' },
 ];
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : 'Неизвестная ошибка');
@@ -52,24 +52,30 @@ function parseZone(raw: string): { zone: GeoMultiPolygon | null } | { error: str
 }
 
 export default function ContractorsPage() {
-  const { contractors, error: referenceError, reload } = useReference();
+  const { contractors, districts, error: referenceError, reload } = useReference();
 
   const [period, setPeriod] = useState('Апрель 2025');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 2;
-  const [pageError, setPageError] = useState<string | null>(null);
+  const PAGE_SIZE = 4;
 
-  // Выбран указанный подрядчик, а пока ничего не выбрано — первый в списке
-  const selected: ContractorOut | null = contractors.find((c) => c.id === selectedId) ?? contractors[0] ?? null;
+  // Пока подрядчик не выбран, справа подсказка «Выберите подрядчика из списка слева» (как в макете)
+  const selected: ContractorOut | null = contractors.find((c) => c.id === selectedId) ?? null;
+  const { assignments } = useContractorDistricts();
+  const contacts = useContractorContacts();
 
-  const currentTasks = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return DEMO_TASKS.slice(start, start + PAGE_SIZE);
-  }, [page]);
+  // Демо-история: строки повторяются по кругу, номера заявок меняются от страницы к странице
+  const currentTasks = useMemo(
+    () =>
+      DEMO_TASKS.map((task, i) => ({
+        ...task,
+        id: i === 0 && page === 1 ? 'ID' : `№ ЗЯ-2024-${String(908 - (page - 1) * PAGE_SIZE - i * 4).padStart(4, '0')}`,
+      })),
+    [page]
+  );
 
   // ---- Форма подрядчика ----
-  const [modal, setModal] = useState<{ mode: 'add' | 'edit'; id?: number } | null>(null);
+  const [modal, setModal] = useState(false); // окно «Новый подрядчик»
   const [form, setForm] = useState({ name: '', phone: '', email: '', zone: '' });
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -79,20 +85,10 @@ export default function ContractorsPage() {
     void reload();
   }, [reload]);
 
-  const openModal = (c?: ContractorOut) => {
+  const openModal = () => {
     setFormError(null);
-    if (c) {
-      setForm({
-        name: c.name,
-        phone: c.phone ?? '',
-        email: c.email ?? '',
-        zone: c.zone ? JSON.stringify(c.zone, null, 2) : '',
-      });
-      setModal({ mode: 'edit', id: c.id });
-    } else {
-      setForm({ name: '', phone: '', email: '', zone: '' });
-      setModal({ mode: 'add' });
-    }
+    setForm({ name: '', phone: '', email: '', zone: '' });
+    setModal(true);
   };
 
   const submit = async (e: FormEvent) => {
@@ -109,13 +105,10 @@ export default function ContractorsPage() {
     };
     setSaving(true);
     try {
-      if (modal?.mode === 'edit' && modal.id != null) await api.updateContractor(modal.id, body);
-      else {
-        const created = await api.createContractor(body);
-        setSelectedId(created.id);
-      }
+      const created = await api.createContractor(body);
+      setSelectedId(created.id);
       await reload();
-      setModal(null);
+      setModal(false);
     } catch (err) {
       setFormError(errorText(err)); // например 422: зона пересекается с чужой
     } finally {
@@ -123,75 +116,67 @@ export default function ContractorsPage() {
     }
   };
 
-  const toggleActive = async (c: ContractorOut) => {
-    setPageError(null);
-    try {
-      await api.updateContractor(c.id, { is_active: !c.is_active });
-      await reload();
-    } catch (err) {
-      setPageError(errorText(err));
-    }
-  };
-
-  const remove = async (c: ContractorOut) => {
-    if (!confirm(`Удалить подрядчика «${c.name}»?`)) return;
-    setPageError(null);
-    try {
-      await api.deleteContractor(c.id);
-      setSelectedId(null);
-      await reload();
-    } catch (err) {
-      // 409: у подрядчика есть заявки — предлагаем отключить
-      setPageError(`${errorText(err)} Если удалить нельзя, отключите подрядчика.`);
-    }
-  };
-
   const inputClass = 'w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl outline-none';
+  const districtName = (c: ContractorOut) =>
+    assignments[c.id] != null ? shortDistrict(districts.find((d) => d.id === assignments[c.id])?.name) : null;
 
+  // Макет «Веб/Управ_Общий» и «Веб/Управ_Открытое»: поля 16, заголовок 32 px, колонки 4/8 с зазором 24
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-100 text-neutral-800 antialiased">
-      <header className="px-4 pt-4 pb-3 flex items-start justify-between shrink-0">
+    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-neutral-100 text-neutral-800 antialiased px-4 pb-4">
+      <div className="border-b border-neutral-200 py-4 sm:py-6 flex flex-wrap items-center justify-between gap-4 sm:gap-6 shrink-0">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900 leading-tight">Управление подрядчиками</h1>
-          <p className="text-xs text-neutral-400 mt-1 font-light">Подрядные организации, их зоны и история выполнения заявок</p>
+          <h1 className="text-2xl font-bold leading-tight tracking-[-0.6px] text-neutral-800 sm:text-[32px] sm:leading-[38px] sm:tracking-[-0.8px]">Управление подрядчиками</h1>
+          <p className="pt-0.5 text-sm leading-5 text-neutral-600">
+            Рейтинг эффективности, соблюдение регламентных сроков
+            <br />и история выполнения заявок
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => openModal()}
-            className="px-4 py-2.5 bg-red-700 hover:bg-red-800 text-white text-sm font-bold rounded-2xl shadow-md cursor-pointer"
+            onClick={openModal}
+            className="h-9 rounded-lg bg-white px-4 text-xs font-bold text-neutral-800 shadow-[0_1px_1px_rgba(0,0,0,0.05)] hover:bg-neutral-200 cursor-pointer transition-colors"
           >
             + Добавить подрядчика
           </button>
-          <div className="bg-white rounded-2xl border border-neutral-200/80 px-4 py-2 flex items-center gap-3 shadow-sm">
-            <Calendar className="w-4 h-4 text-red-600" />
-            <div className="text-left">
-              <div className="text-xs text-neutral-400 font-medium">Отчётный период</div>
-              <select value={period} onChange={(e) => setPeriod(e.target.value)} className="text-xs font-bold text-neutral-800 bg-transparent outline-none cursor-pointer">
-                <option value="Апрель 2025">Апрель 2025</option>
-                <option value="Май 2025">Май 2025</option>
-              </select>
-            </div>
-          </div>
+          <label className="flex h-[52px] items-center gap-[13px] rounded-lg bg-white px-4 py-2.5 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+            <Icon name="calendar" className="h-4 w-[15px] shrink-0 text-red-700" />
+            <span className="flex flex-col">
+              <span className="text-[11px] font-light leading-[11px] text-neutral-600">Отчётный период</span>
+              <span className="relative pt-0.5">
+                <select
+                  aria-label="Отчётный период"
+                  value={period}
+                  onChange={(e) => setPeriod(e.target.value)}
+                  className="w-[124px] cursor-pointer appearance-none bg-transparent pr-6 text-sm leading-5 text-neutral-800 outline-none"
+                >
+                  <option value="Апрель 2025">Апрель 2025</option>
+                  <option value="Май 2025">Май 2025</option>
+                </select>
+                <Icon name="chevron-down" className="pointer-events-none absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-800" />
+              </span>
+            </span>
+          </label>
         </div>
-      </header>
+      </div>
 
-      {(pageError || referenceError) && (
-        <div className="mx-8 mb-3 px-4 py-2.5 rounded-xl text-xs font-medium border bg-red-50 border-red-200 text-red-800">
-          {pageError ?? `Не удалось загрузить подрядчиков: ${referenceError}`}
+      {referenceError && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-800">
+          Не удалось загрузить подрядчиков: {referenceError}
         </div>
       )}
 
-      <div className="flex-1 px-4 pb-4 flex gap-6 overflow-hidden">
-        <section className="w-[349px] flex flex-col shrink-0">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-neutral-400">Подрядные организации</span>
-            <span className="text-xs font-bold text-neutral-600">{contractors.length}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-12 items-start gap-x-6 gap-y-4 py-4">
+        <section className="lg:col-span-4 flex flex-col gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold uppercase leading-[14px] tracking-[0.55px] text-neutral-600">Подрядные организации</span>
+            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-bold leading-[14px] text-neutral-800">{contractors.length}</span>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+          <div className="flex flex-col gap-2">
             {contractors.map((c) => {
               const isSelected = selected?.id === c.id;
+              const district = districtName(c);
               return (
                 <div
                   key={c.id}
@@ -199,157 +184,173 @@ export default function ContractorsPage() {
                     setSelectedId(c.id);
                     setPage(1);
                   }}
-                  className={`bg-white rounded-2xl p-4 border transition-all cursor-pointer shadow-sm hover:shadow ${
-                    isSelected ? 'border-red-600 ring-2 ring-red-100' : 'border-neutral-200/80'
-                  } ${c.is_active ? '' : 'opacity-60'}`}
+                  className={`flex flex-col gap-3 rounded-xl border bg-white p-4 shadow-[0_1px_1px_rgba(0,0,0,0.05)] cursor-pointer transition-colors ${
+                    isSelected ? 'border-red-700' : 'border-transparent hover:border-neutral-300'
+                  } ${c.is_active ? '' : 'opacity-80'}`}
                 >
-                  <h3 className="text-sm font-bold text-neutral-900 leading-tight">{c.name}</h3>
-                  <div className="flex items-center gap-1.5 text-xs text-neutral-400 mt-1 font-light">
-                    <MapPin className="w-3.5 h-3.5 text-red-600" />
-                    <span>{c.zone ? 'Зона задана' : 'Зона не задана'}</span>
-                    {!c.is_active && <span className="ml-auto font-bold text-neutral-500">отключён</span>}
+                  <div>
+                    <h3 className="truncate text-base font-bold leading-6 text-neutral-800">{c.name}</h3>
+                    <div className="flex items-center gap-1 pt-0.5 text-xs text-neutral-600">
+                      <Icon name="map-pin" className="h-[13px] w-[9px] shrink-0 text-red-700" />
+                      <span className="truncate">{district ?? 'Район не назначен'}</span>
+                    </div>
                   </div>
+
+                  {!c.is_active && (
+                    <div className="flex items-center justify-between rounded-lg bg-neutral-100 px-[10px] pb-[10px] pt-3">
+                      <div className="flex items-center gap-2 text-xs text-neutral-600">
+                        <Icon name="info" className="h-[15px] w-[15px] shrink-0" />
+                        <span>
+                          Нет данных за
+                          <br />
+                          выбранный месяц
+                        </span>
+                      </div>
+                      <span className="text-[11px] leading-[14px] text-neutral-600">
+                        Показатели не
+                        <br />
+                        рассчитываются
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
             {contractors.length === 0 && (
-              <div className="bg-white rounded-2xl p-6 border border-neutral-200 text-center text-xs text-neutral-400 font-light">
-                Подрядчиков пока нет
-              </div>
+              <div className="rounded-xl bg-white p-6 text-center text-xs text-neutral-600 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">Подрядчиков пока нет</div>
             )}
           </div>
         </section>
 
-        {!selected ? (
-          <main className="flex-1 bg-white rounded-3xl border border-neutral-200/80 shadow-sm flex flex-col items-center justify-center p-12 text-center">
-            <div className="w-20 h-20 rounded-full bg-neutral-100 flex items-center justify-center text-neutral-500 mb-4">
-              <HardHat className="w-10 h-10" />
+        <main className="lg:col-span-8 min-w-0">
+          {!selected ? (
+            <div className="flex min-h-[420px] flex-col items-center justify-center rounded-2xl lg:min-h-[640px] bg-white px-8 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+              {/* В файлах SVG уже есть и серый круг, и красный значок-галочка */}
+              <div className="relative mb-6">
+                <Icon name="empty-contractor" />
+                <Icon name="badge-check" className="absolute -bottom-1 -right-1" />
+              </div>
+              <h2 className="mb-2 text-2xl font-bold leading-[30px] tracking-[-0.6px] text-neutral-800">Выберите подрядчика из списка слева</h2>
+              <p className="max-w-[512px] text-center text-base leading-[26px] text-neutral-600">
+                Нажмите на организацию для просмотра детальных показателей KPI (число заявок, доля в срок, среднее время устранения) и журнала выполненных работ за
+                выбранный период
+              </p>
             </div>
-            <h2 className="text-lg font-bold text-neutral-900 mb-2">Выберите подрядчика из списка слева</h2>
-          </main>
-        ) : (
-          <main className="flex-1 flex flex-col gap-6 overflow-y-auto pr-1">
-            <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-lg font-bold text-neutral-900">{selected.name}</h2>
-                  <div className="text-xs mt-2 space-y-0.5">
-                    <div className="text-neutral-500">Телефон: <span className="text-red-600 font-bold">{selected.phone || '—'}</span></div>
-                    <div className="text-neutral-500">Email: <span className="text-neutral-800 font-semibold">{selected.email || '—'}</span></div>
-                    <div className="text-neutral-500">Зона: <span className="text-neutral-800 font-semibold">{selected.zone ? `${selected.zone.coordinates.length} многоугольн.` : 'не задана'}</span></div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-4 rounded-xl bg-white px-6 pb-4 pt-6 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+                <div className="flex flex-wrap items-start justify-between gap-4 pb-2">
+                  <div>
+                    <h2 className="text-2xl font-bold leading-tight text-neutral-800">{selected.name}</h2>
+                  </div>
+                  <div className="text-right text-base leading-6 text-neutral-800">
+                    <div>Контакт подрядчика: {contacts[selected.id] ?? '—'}</div>
+                    <div className="text-red-700">{selected.phone || '—'}</div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <button onClick={() => openModal(selected)} aria-label="Редактировать" className="h-9 px-3 bg-neutral-100 hover:bg-neutral-200 rounded-xl text-sm font-bold flex items-center gap-1.5 cursor-pointer">
-                    <Pencil className="w-3.5 h-3.5" />
-                    <span>Изменить</span>
-                  </button>
-                  <button
-                    onClick={() => toggleActive(selected)}
-                    className="h-9 px-3 bg-neutral-100 hover:bg-neutral-200 rounded-xl text-sm font-bold cursor-pointer"
-                  >
-                    {selected.is_active ? 'Отключить' : 'Включить'}
-                  </button>
-                  <button onClick={() => remove(selected)} className="h-9 px-3 bg-red-700 hover:bg-red-800 text-white rounded-xl text-sm font-bold cursor-pointer">
-                    Удалить
-                  </button>
+                <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-3">
+                  <div className="flex h-44 flex-col justify-between rounded-xl bg-neutral-100 p-4">
+                    <div className="flex items-start justify-between text-sm leading-[normal] text-neutral-600">
+                      <span>ВСЕГО ЗАЯВОК ЗА<br />ПЕРИОД</span>
+                      <Icon name="ctr-kpi-requests" className="h-4 w-[15px] text-red-700" />
+                    </div>
+                    <div className="text-[32px] font-bold leading-[38px] text-neutral-800">{DEMO_STATS.total}</div>
+                    <div className="flex items-center justify-between text-xs text-neutral-600">
+                      <span>{DEMO_STATS.closed} закрыто</span>
+                      <span className="text-red-700">{DEMO_STATS.inProgress} в работе</span>
+                    </div>
+                  </div>
+
+                  <div className="flex h-44 flex-col justify-between rounded-xl bg-neutral-100 p-4">
+                    <div className="flex items-start justify-between text-sm leading-[normal] text-neutral-600">
+                      <span>ДОЛЯ ВЫПОЛНЕННЫХ<br />В СРОК</span>
+                      <Icon name="ctr-kpi-on-time" className="h-[18px] w-3 text-red-700" />
+                    </div>
+                    <div className="text-[32px] font-bold leading-[38px] text-neutral-800">{DEMO_STATS.onTimePercent}%</div>
+                    <div className="flex items-center justify-between text-xs text-neutral-600">
+                      <span>{DEMO_STATS.onTimeCount} вовремя</span>
+                      <span className="text-red-700">{DEMO_STATS.delayedCount} с задержкой</span>
+                    </div>
+                  </div>
+
+                  <div className="flex h-44 flex-col justify-between rounded-xl bg-neutral-100 p-4">
+                    <div className="flex items-start justify-between text-sm leading-[normal] text-neutral-600">
+                      <span>СРЕДНЕЕ ВРЕМЯ<br />РЕМОНТА</span>
+                      <Icon name="ctr-kpi-time" className="h-[13px] w-4 text-red-700" />
+                    </div>
+                    <div className="text-2xl font-bold leading-normal text-neutral-800">{DEMO_STATS.avgTimeHours} ч</div>
+                    <div />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl px-4 py-2.5 text-xs font-medium">
-              Показатели и история ниже — демо-данные. Реальные придут с этапом 2 API (отчёты и рейтинг).
-            </div>
-
-            <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-100 flex flex-col justify-between">
-                  <div className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Всего заявок</div>
-                  <div className="text-3xl font-extrabold text-neutral-900 my-2">{DEMO_STATS.total}</div>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className="text-neutral-500">{DEMO_STATS.closed} закрыто</span>
-                    <span className="text-red-600 font-bold">{DEMO_STATS.inProgress} в работе</span>
-                  </div>
-                </div>
-
-                <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-100 flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-xs font-bold text-neutral-400 uppercase tracking-wider">
-                    <span>Доля в срок</span>
-                    <Smartphone className="w-4 h-4 text-red-600" />
-                  </div>
-                  <div className="text-3xl font-extrabold text-neutral-900 my-2">{DEMO_STATS.onTimePercent}%</div>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className="text-neutral-500">{DEMO_STATS.onTimeCount} вовремя</span>
-                    <span className="text-red-600 font-bold">{DEMO_STATS.delayedCount} с задержкой</span>
-                  </div>
-                </div>
-
-                <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-100 flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-xs font-bold text-neutral-400 uppercase tracking-wider">
-                    <span>Среднее время</span>
-                    <Timer className="w-4 h-4 text-red-600" />
-                  </div>
-                  <div className="text-3xl font-extrabold text-neutral-900 my-2">{DEMO_STATS.avgTimeHours} ч</div>
-                  <div className="text-xs text-neutral-400 font-light">Норматив соблюден</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm flex-1 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-neutral-900">История заявок подрядчика</h3>
-                  <span className="text-xs text-neutral-400 font-light">({DEMO_STATS.total} заявки в {period})</span>
+              <div className="flex flex-col gap-4 rounded-xl bg-white p-6 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+                <div className="flex items-center justify-between pb-1">
+                  <h3 className="text-lg font-bold leading-6 text-neutral-800">
+                    История заявок
+                    <br />
+                    подрядчика
+                  </h3>
+                  <span className="text-sm text-neutral-600">({DEMO_STATS.total} заявки в {period.replace('Апрель', 'Апреле').replace('Май', 'Мае')})</span>
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-neutral-200 text-neutral-400 uppercase font-semibold text-xs tracking-wider pb-2">
-                        <th className="py-2.5 px-3">ID и дата</th>
-                        <th className="py-2.5 px-3">Адрес</th>
-                        <th className="py-2.5 px-3 text-center">Время работ</th>
-                        <th className="py-2.5 px-3 text-right">Статус</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100">
-                      {currentTasks.map((t) => (
-                        <tr key={t.id} className={`hover:bg-neutral-50/80 transition-colors ${t.isOverdue ? 'bg-red-50/40' : ''}`}>
-                          <td className="py-3 px-3">
-                            <div className={`font-bold ${t.isOverdue ? 'text-red-700' : 'text-neutral-800'}`}>{t.id}</div>
-                            <div className="text-xs text-neutral-400 mt-0.5">{t.dateAssigned}</div>
-                          </td>
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-1.5 font-semibold text-neutral-800">
-                              <MapPin className="w-3.5 h-3.5 text-red-600" />
-                              <span>{t.address}</span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            <div className="font-bold text-neutral-800">{t.duration}</div>
-                            {t.isOverdue ? (
-                              <div className="text-xs font-bold text-red-600 mt-0.5">{t.overdueTime}</div>
-                            ) : (
-                              <div className="text-xs text-neutral-400 mt-0.5">{t.normTime}</div>
-                            )}
-                          </td>
-                          <td className="py-3 px-3 text-right">
-                            <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold text-white ${t.status === 'Выполнено' ? 'bg-emerald-600' : 'bg-amber-500'}`}>
-                              {t.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                  <div className="flex min-w-[680px] flex-col gap-2">
+                    <div className="grid grid-cols-10 rounded-lg bg-neutral-100 px-4 py-2 text-[11px] font-bold uppercase leading-[14px] tracking-[0.55px] text-neutral-600">
+                      <div className="col-span-3">ID и дата назначения</div>
+                      <div className="col-span-3">Адрес дефекта</div>
+                      <div className="col-span-2 text-right">Время работ</div>
+                      <div className="col-span-2 text-right">Статус заявки</div>
+                    </div>
 
-              <Pagination currentPage={page} totalItems={DEMO_TASKS.length} pageSize={PAGE_SIZE} onPageChange={setPage} itemLabel="заявок" />
+                    {currentTasks.map((task) => {
+                      const overdue = !!task.overdueBy;
+                      return (
+                        <div
+                          key={`${page}-${task.assigned}-${task.address}`}
+                          className={`grid grid-cols-10 items-center rounded-xl px-4 py-[14px] shadow-[0_1px_1.5px_rgba(0,0,0,0.02)] ${
+                            overdue ? 'bg-[rgba(255,218,214,0.2)]' : 'bg-neutral-100'
+                          }`}
+                        >
+                          <div className="col-span-3">
+                            <div className={`text-sm leading-5 ${overdue ? 'text-red-700' : 'text-neutral-800'}`}>{task.id}</div>
+                            <div className="text-xs leading-4 text-neutral-600">{task.assigned}</div>
+                          </div>
+                          <div className="col-span-3 flex items-center gap-1.5 pr-2 text-sm text-neutral-800">
+                            <Icon name="map-pin" className="h-[13px] w-[9px] shrink-0 text-red-700" />
+                            <span className="truncate">{task.address}</span>
+                          </div>
+                          <div className="col-span-2 flex flex-col items-end gap-0.5 pt-0.5">
+                            <span className={`text-sm leading-5 ${overdue ? 'text-red-700' : 'text-neutral-800'}`}>{task.duration}</span>
+                            <span className="text-[11px] font-bold leading-[14px] text-red-700">{overdue ? task.overdueBy : 'Норма: 24 ч'}</span>
+                          </div>
+                          <div className="col-span-2 flex justify-end">
+                            <span
+                              className={`flex h-5 w-[90px] items-center justify-center rounded-xl text-[11px] font-light ${
+                                task.status === 'Выполнено' ? 'bg-[#2E9E4F] text-white' : 'bg-[#F2B705] text-neutral-800'
+                              }`}
+                            >
+                              {task.status}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <Pagination
+                  currentPage={page}
+                  totalItems={DEMO_STATS.total}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={setPage}
+                  itemLabel="заявок за выбранный период"
+                />
+              </div>
             </div>
-          </main>
-        )}
+          )}
+        </main>
       </div>
 
       {modal && (
@@ -357,10 +358,10 @@ export default function ContractorsPage() {
           <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-neutral-200">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-neutral-900">
-                {modal.mode === 'edit' ? 'Редактирование подрядчика' : 'Новый подрядчик'}
+                Новый подрядчик
               </h3>
-              <button onClick={() => setModal(null)} aria-label="Закрыть" className="p-1 rounded-full hover:bg-neutral-100 text-neutral-400 font-bold">
-                <X className="w-5 h-5" />
+              <button onClick={() => setModal(false)} aria-label="Закрыть" className="p-1 rounded-full hover:bg-neutral-100 text-neutral-400 font-bold">
+                <CloseIcon className="w-5 h-5" />
               </button>
             </div>
 
@@ -395,7 +396,7 @@ export default function ContractorsPage() {
               {formError && <div className="text-red-600 font-medium">{formError}</div>}
 
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setModal(null)} className="flex-1 h-10 bg-neutral-100 hover:bg-neutral-200 rounded-xl font-bold cursor-pointer">
+                <button type="button" onClick={() => setModal(false)} className="flex-1 h-10 bg-neutral-100 hover:bg-neutral-200 rounded-xl font-bold cursor-pointer">
                   Отмена
                 </button>
                 <button type="submit" disabled={saving} className="flex-1 h-10 bg-red-700 hover:bg-red-800 text-white rounded-xl font-bold cursor-pointer disabled:opacity-60">

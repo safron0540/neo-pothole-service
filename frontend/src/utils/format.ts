@@ -130,3 +130,17 @@ export function formatDeadlineShort(iso?: string | null): string {
   if (dayKey(d) === dayKey(new Date(Date.now() + 864e5))) return `до ${hm(d)} завтра`;
   return `до ${dayMonth(d)}, ${hm(d)}`;
 }
+
+/** «Ленинский район» → «Ленинский» (в таблицах и списках, как в макете) */
+export const shortDistrict = (name?: string | null): string => (name ? name.replace(/\s*район$/i, '') : '—');
+
+/** Адрес из API — «улица, дом, район». Делим на улицу и район (район может отсутствовать) */
+export function splitAddress(address?: string | null): { street: string; district: string | null } {
+  if (!address) return { street: '—', district: null };
+  const parts = address.split(',').map((s) => s.trim()).filter(Boolean);
+  const last = parts[parts.length - 1] ?? '';
+  if (parts.length > 1 && /(район|округ|р-н)/i.test(last)) {
+    return { street: parts.slice(0, -1).join(', '), district: last };
+  }
+  return { street: address, district: null };
+}
