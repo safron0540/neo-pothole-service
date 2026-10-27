@@ -398,7 +398,7 @@ ALLOWED = {
 
 - **Фото:** ссылки photo_before_url, photo_after_url подписаны и живут 15 минут; у слитой заявки фото «после» берётся у основной.
 
-- **Карта:** /map/points принимает bbox и отдаёт минимум полей. Тепловая карта /map/heatmap — окраска дорог: GeoJSON-линии с числом ям и уровнем цвета по весу ям на 100 м (большая 1, маленькая 0,5; пороги 2 / 4 / 7 **\[D\]**); детальность по zoom: улица целиком, кусок улицы, участок 100 м.
+- **Карта:** /map/points принимает bbox и отдаёт минимум полей. Тепловая карта /map/heatmap — окраска дорог: GeoJSON-линии с числом ям и уровнем цвета по весу ям на 100 м (большая 1, маленькая 0,5; пороги 2 / 4 / 7 **\[D\]**); детальность по zoom: улица целиком, кусок улицы, участок 100 м. Яма греет свою дорогу и её продолжение с тем же названием (в OSM улица разрезана на куски), соседние дворы и перекрёстки не греет: иначе на всех дорогах Томска каждая яма задевала бы сотни проездов и карта считалась бы десятки секунд.
 
 - **Отчёты:** JSON; веб строит предпросмотр, SheetJS сохраняет его в .xlsx (REQ-071, 072).
 
@@ -463,6 +463,7 @@ cp .env.example .env
 docker compose up -d --build
 docker compose exec backend alembic upgrade head
 docker compose exec backend python -m scripts.load_streets
+docker compose exec backend python -m scripts.load_roads
 docker compose exec backend python -m scripts.load_buildings
 docker compose exec backend python -m scripts.seed_demo
 docker compose exec backend python -m scripts.load_zones

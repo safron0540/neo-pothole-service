@@ -452,35 +452,43 @@ def map_points(session: Session, f: RequestFilter, bbox: str) -> list[MapPoint]:
 # на стыках кусков OSM и на перекрёстках линия не рвётся.
 HEAT_SQL = text(
     """
-    WITH pits AS (
-        SELECT ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography AS location, w
-        FROM unnest(CAST(:lons AS float8[]), CAST(:lats AS float8[]), CAST(:ws AS float8[]))
-            AS p(lon, lat, w)
+    WITH pits AS MATERIALIZED (
+        SELECT ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography AS location, w, street_id
+        FROM unnest(CAST(:lons AS float8[]), CAST(:lats AS float8[]), CAST(:ws AS float8[]),
+                    CAST(:streets AS bigint[]))
+            AS p(lon, lat, w, street_id)
+    ), pairs AS MATERIALIZED (
+        -- Яма греет свою дорогу и её продолжение с тем же названием в пределах reach:
+        -- в OSM улица разрезана на куски, и тепло не должно рваться на стыках. Соседние
+        -- дворы и перекрёстки не греются, иначе каждая яма задевала бы сотни проездов.
+        SELECT s.id AS street_id, p.location, p.w
+        FROM pits p
+        JOIN streets own ON own.id = p.street_id
+        JOIN streets s ON ST_DWithin(s.geom, p.location, :reach)
+            AND (s.id = own.id OR s.name = own.name)
+        WHERE s.geom && ST_MakeEnvelope(:w, :s, :e, :n, 4326)::geography
     ), near AS (
         SELECT s.id, s.name, s.geom, ST_Length(s.geom) AS len
         FROM streets s
-        WHERE s.geom && ST_MakeEnvelope(:w, :s, :e, :n, 4326)::geography
-          AND EXISTS (SELECT 1 FROM pits p WHERE ST_DWithin(s.geom, p.location, :reach))
-    ), pieces AS (
-        SELECT near.id, near.name, g.i,
-               ST_LineSubstring(near.geom::geometry,
-                                LEAST(g.i * :step / near.len, 1),
-                                LEAST((g.i + 1) * :step / near.len, 1)) AS piece
-        FROM near, generate_series(0, GREATEST(CEIL(near.len / :step)::int - 1, 0)) AS g(i)
+        WHERE s.id IN (SELECT street_id FROM pairs)
+    ), pieces AS MATERIALIZED (
+        SELECT near.id, near.name, g.i, cut.piece,
+               ST_LineInterpolatePoint(cut.piece, 0.5)::geography AS mid
+        FROM near,
+             generate_series(0, GREATEST(CEIL(near.len / :step)::int - 1, 0)) AS g(i),
+             LATERAL (SELECT ST_LineSubstring(near.geom::geometry,
+                                              LEAST(g.i * :step / near.len, 1),
+                                              LEAST((g.i + 1) * :step / near.len, 1))
+                      AS piece) AS cut
     ), heat AS (
         SELECT pieces.id, pieces.name, pieces.i, pieces.piece,
-               SUM(p.w * EXP(-POWER(ST_Distance(
-                   ST_LineInterpolatePoint(pieces.piece, 0.5)::geography, p.location), 2)
+               SUM(p.w * EXP(-POWER(ST_Distance(pieces.mid, p.location), 2)
                    / (2 * :sigma * :sigma))) AS kernel,
-               COUNT(*) FILTER (WHERE ST_DWithin(
-                   ST_LineInterpolatePoint(pieces.piece, 0.5)::geography, p.location, :sigma))
-                   AS n,
-               COALESCE(SUM(p.w) FILTER (WHERE ST_DWithin(
-                   ST_LineInterpolatePoint(pieces.piece, 0.5)::geography, p.location, :sigma)),
-                   0) AS weight
+               COUNT(*) FILTER (WHERE ST_DWithin(pieces.mid, p.location, :sigma)) AS n,
+               COALESCE(SUM(p.w) FILTER (WHERE ST_DWithin(pieces.mid, p.location, :sigma)), 0)
+                   AS weight
         FROM pieces
-        JOIN pits p
-          ON ST_DWithin(ST_LineInterpolatePoint(pieces.piece, 0.5)::geography, p.location, :reach)
+        JOIN pairs p ON p.street_id = pieces.id AND ST_DWithin(pieces.mid, p.location, :reach)
         GROUP BY pieces.id, pieces.name, pieces.i, pieces.piece
     )
     SELECT id, name, i, ST_AsGeoJSON(piece, 6) AS geometry, kernel, n, weight
@@ -524,6 +532,7 @@ def heatmap(session: Session, f: RequestFilter, bbox: str, zoom: int) -> Heatmap
                 "lons": [p[0] for p in pits],
                 "lats": [p[1] for p in pits],
                 "ws": [float(p[2]) for p in pits],
+                "streets": [p[3] for p in pits],
                 "w": west,
                 "s": south,
                 "e": east,

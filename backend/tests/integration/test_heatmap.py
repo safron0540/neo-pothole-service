@@ -2,6 +2,7 @@
 спадает с расстоянием, линия без разрывов, масштаб задаёт ширину пятна."""
 
 import pytest
+from sqlalchemy import text
 
 from app.core import rules
 from tests.integration.conftest import add_request, add_street, add_user, login
@@ -112,3 +113,26 @@ def test_heatmap_bad_bbox_and_roles(client, session, dispatcher):
     headers = login(client, add_user(session, "contractor"))
     response = client.get(f"{API}/map/heatmap", params={"bbox": BBOX}, headers=headers)
     assert response.status_code == 403
+
+
+def add_line(session, name: str, coords: str) -> int:
+    return session.execute(
+        text(
+            "INSERT INTO streets (name, street_group, district_id, geom)"
+            " SELECT :n, 'Е', district_id, ST_GeogFromText(:line) FROM streets LIMIT 1"
+            " RETURNING id"
+        ),
+        {"n": name, "line": f"SRID=4326;LINESTRING({coords})"},
+    ).scalar_one()
+
+
+def test_req_052_heat_follows_street_not_neighbour_yard(client, session, dispatcher, street):
+    name = session.execute(text("SELECT name FROM streets WHERE id = :i"), {"i": street}).scalar()
+    # Продолжение той же улицы (в OSM — другой кусок) и двор в ≈ 30 м к северу от ямы
+    tail = add_line(session, name, "100.0 60.0, 99.99 60.0")
+    yard = add_line(session, "Внутриквартальный проезд", "100.004 60.0003, 100.006 60.0003")
+    for _ in range(5):  # яма в 278 м от стыка: на целом городе пятно туда дотягивает
+        pit(session, street)
+    body = heat(client, dispatcher, zoom=11)
+    assert pieces(body, tail)  # тепло не рвётся на стыке кусков улицы
+    assert not pieces(body, yard)  # соседний проезд не греется
