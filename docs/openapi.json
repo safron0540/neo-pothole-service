@@ -890,7 +890,7 @@
           "dispatcher"
         ],
         "summary": "Список заявок с фильтрами",
-        "description": "sort=priority: класс → дубликаты → группа → дата подачи → плановая дата (REQ-045).\nСлитые заявки не показываются (В-18).",
+        "description": "sort=priority: класс → дубликаты → группа → дата подачи → плановая дата (REQ-045);\nsort=detected_at — сначала новые. Слитые заявки не показываются (В-18).",
         "operationId": "list_requests_api_v1_requests_get",
         "security": [
           {
@@ -2364,6 +2364,7 @@
           "dispatcher"
         ],
         "summary": "Добавить заметку",
+        "description": "Заметку видят только диспетчеры; в истории появляется событие note_added.",
         "operationId": "add_note_api_v1_requests__request_id__notes_post",
         "security": [
           {
@@ -2471,7 +2472,7 @@
           "dispatcher"
         ],
         "summary": "Заявки на карте",
-        "description": "Те же фильтры, что у /requests (отчёт = карта); только видимая область.\nbbox в порядке Leaflet map.getBounds().toBBoxString(): запад,юг,восток,север.",
+        "description": "Те же фильтры, что у /requests (отчёт = карта); только видимая область, до 2000 точек.\nbbox в порядке Leaflet map.getBounds().toBBoxString(): запад,юг,восток,север.",
         "operationId": "map_points_api_v1_map_points_get",
         "security": [
           {
@@ -3048,7 +3049,7 @@
           "citizen"
         ],
         "summary": "Новые уведомления (опрос)",
-        "description": "Приложение опрашивает раз в 30 с и передаёт since = время последнего полученного.",
+        "description": "Приложение опрашивает раз в 30 с и передаёт since = время последнего полученного.\nБез since — последние 100. Ответ по возрастанию времени.",
         "operationId": "my_notifications_api_v1_me_notifications_get",
         "security": [
           {

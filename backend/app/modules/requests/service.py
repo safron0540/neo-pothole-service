@@ -7,11 +7,12 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, or_, select, text
+from geoalchemy2 import Geography, Geometry
+from sqlalchemy import cast, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core import rules
+from app.core import rules, validators
 from app.core.statuses import (
     ACCEPTED,
     DONE,
@@ -30,7 +31,8 @@ from app.modules.media import service as media
 from app.modules.media.models import Photo
 from app.modules.media.service import photo_url
 from app.modules.notifications.models import Notification
-from app.modules.requests.models import Request, RequestEvent
+from app.modules.requests.filters import NEWEST_ORDER, PRIORITY_ORDER, RequestFilter, conditions
+from app.modules.requests.models import InternalNote, Request, RequestEvent
 from app.modules.requests.schemas import (
     Applicant,
     CitizenRequestOut,
@@ -38,7 +40,10 @@ from app.modules.requests.schemas import (
     ContractorAssign,
     ContractorRequestOut,
     DispatcherRequestOut,
+    DispatcherRequestSummary,
     EventOut,
+    MapPoint,
+    NoteOut,
     RequestCreate,
     RequestSummary,
     StatusChange,
@@ -308,6 +313,82 @@ def request_events(session: Session, request_id: int) -> list[EventOut]:
     return events_of(session, request_id)
 
 
+# --- Карта ------------------------------------------------------------------------------
+
+MAP_LIMIT = 2000  # больше маркеров в окне не рисуем: при отдалении веб группирует их
+
+
+def map_points(session: Session, f: RequestFilter, bbox: str) -> list[MapPoint]:
+    """Заявки в видимой области (REQ-048): те же фильтры, что у списка (REQ-067)."""
+    box = validators.parse_bbox(bbox)
+    if box is None:
+        raise ApiError(422, "invalid_bbox", "bbox: запад,юг,восток,север в градусах")
+    now = datetime.now(UTC)
+    point = cast(Request.location, Geometry)
+    envelope = cast(func.ST_MakeEnvelope(*box, 4326), Geography)
+    rows = session.execute(
+        select(Request, func.ST_Y(point), func.ST_X(point), District.name, Contractor.name)
+        .outerjoin(District, District.id == Request.district_id)
+        .outerjoin(Contractor, Contractor.id == Request.contractor_id)
+        .where(Request.location.op("&&")(envelope), *conditions(f, now))
+        .order_by(*PRIORITY_ORDER)
+        .limit(MAP_LIMIT)
+    )
+    return [
+        MapPoint(
+            id=r.id,
+            lat=lat,
+            lon=lon,
+            status=r.status,
+            defect_class=r.defect_class,
+            is_overdue=rules.is_overdue(r.status, r.planned_due_at, now),
+            address=r.address,
+            street_group=r.street_group,
+            district=Ref(id=r.district_id, name=district) if district else None,
+            contractor=Ref(id=r.contractor_id, name=contractor) if contractor else None,
+            detected_at=r.detected_at,
+            planned_due_at=r.planned_due_at,
+        )
+        for r, lat, lon, district, contractor in rows
+    ]
+
+
+# --- Внутренние заметки ------------------------------------------------------------------
+
+
+def _note_out(note: InternalNote, author: User) -> NoteOut:
+    return NoteOut(
+        id=note.id,
+        author=Ref(id=author.id, name=actor_name(author)),
+        text=note.text,
+        created_at=note.created_at,
+    )
+
+
+def list_notes(session: Session, request_id: int) -> list[NoteOut]:
+    """Заметки видит только диспетчер (REQ-060): у гражданина и подрядчика их нет в схемах."""
+    if session.get(Request, request_id) is None:
+        raise not_found()
+    rows = session.execute(
+        select(InternalNote, User)
+        .join(User, User.id == InternalNote.author_id)
+        .where(InternalNote.request_id == request_id)
+        .order_by(InternalNote.created_at, InternalNote.id)
+    )
+    return [_note_out(note, author) for note, author in rows]
+
+
+def add_note(session: Session, author_id: int, request_id: int, text_: str) -> NoteOut:
+    if session.get(Request, request_id) is None:
+        raise not_found()
+    note = InternalNote(request_id=request_id, author_id=author_id, text=text_.strip())
+    session.add(note)
+    session.flush()
+    add_event(session, request_id, "note_added", author_id, note_id=note.id)
+    session.commit()
+    return _note_out(note, session.get(User, author_id))
+
+
 # --- Подрядчик ----------------------------------------------------------------------------
 
 CONTRACTOR_STATUSES = (ACCEPTED, IN_PROGRESS, DONE)
@@ -390,6 +471,53 @@ def complete(
     return contractor_card(session, contractor_id, request_id)
 
 
+# --- Список заявок диспетчера ------------------------------------------------------------
+
+
+def list_requests(
+    session: Session, f: RequestFilter, paging: Pagination, sort: str
+) -> Page[DispatcherRequestSummary]:
+    """Список с фильтрами (REQ-050, 051); sort=priority — порядок REQ-045."""
+    now = datetime.now(UTC)
+    where = conditions(f, now)
+    total = session.scalar(select(func.count()).select_from(Request).where(*where))
+    order = PRIORITY_ORDER if sort == "priority" else NEWEST_ORDER
+    rows = session.execute(
+        select(Request, District.name, Contractor.name)
+        .outerjoin(District, District.id == Request.district_id)
+        .outerjoin(Contractor, Contractor.id == Request.contractor_id)
+        .where(*where)
+        .order_by(*order)
+        .limit(paging.limit)
+        .offset(paging.offset)
+    )
+    return Page(
+        items=[
+            DispatcherRequestSummary(**dispatcher_summary_fields(r, district, contractor, now))
+            for r, district, contractor in rows
+        ],
+        total=total,
+        limit=paging.limit,
+        offset=paging.offset,
+    )
+
+
+def dispatcher_summary_fields(
+    request: Request, district: str | None, contractor: str | None, now: datetime
+) -> dict:
+    return {
+        **summary_fields(request, now),
+        "street_group": request.street_group,
+        "district": Ref(id=request.district_id, name=district) if district else None,
+        "contractor": Ref(id=request.contractor_id, name=contractor) if contractor else None,
+        "duplicates_count": request.duplicates_count,
+        "duplicate_of_id": request.duplicate_of_id,
+        "needs_group": request.street_group is None,
+        "needs_contractor": request.contractor_id is None,
+        "version": request.version,
+    }
+
+
 # --- Карточка диспетчера -----------------------------------------------------------------
 
 
@@ -413,15 +541,15 @@ def dispatcher_card(session: Session, request_id: int) -> DispatcherRequestOut:
             .where(User.id == request.author_id)
         ).one()
         applicant = Applicant(first_name=user.first_name, last_name=user.last_name, phone=phone)
+    district = ref(session, District, request.district_id)
+    contractor = ref(session, Contractor, request.contractor_id)
     return DispatcherRequestOut(
-        **summary_fields(request, datetime.now(UTC)),
-        street_group=request.street_group,
-        district=ref(session, District, request.district_id),
-        contractor=ref(session, Contractor, request.contractor_id),
-        duplicates_count=request.duplicates_count,
-        duplicate_of_id=request.duplicate_of_id,
-        needs_group=request.street_group is None,
-        needs_contractor=request.contractor_id is None,
+        **dispatcher_summary_fields(
+            request,
+            district.name if district else None,
+            contractor.name if contractor else None,
+            datetime.now(UTC),
+        ),
         location=location_of(session, request.id),
         accuracy_m=request.accuracy_m,
         house_number=request.house_number,
@@ -439,7 +567,6 @@ def dispatcher_card(session: Session, request_id: int) -> DispatcherRequestOut:
         photo_before_url=photo_url(request.before_photo_id),
         photo_after_url=photo_url(after_photo_id(session, request)),
         applicant=applicant,
-        version=request.version,
     )
 
 
