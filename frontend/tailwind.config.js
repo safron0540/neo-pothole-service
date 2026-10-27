@@ -60,7 +60,7 @@ export default {
         emerald: scale('#2E9E4F'),
       },
       fontFamily: {
-        sans: ['Circe', 'system-ui', '"Segoe UI"', 'Roboto', 'Arial', 'sans-serif'],
+        sans: ['Circe', 'sans-serif'],
       },
       // У Circe нет начертаний 500 и 600: medium → Regular, semibold → Bold
       fontWeight: {

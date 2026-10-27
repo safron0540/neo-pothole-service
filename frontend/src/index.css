@@ -75,14 +75,14 @@
 
 /* Страховка: класс Tailwind font-sans не должен подменять Circe, даже при устаревшем tailwind.config.js */
 .font-sans {
-  font-family: 'Circe', system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  font-family: 'Circe', sans-serif;
 }
 /* Типографика макета: Body — Circe Regular 14px */
 body {
   margin: 0;
   background-color: var(--color-bg-base);
   color: var(--color-text-main);
-  font-family: 'Circe', system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  font-family: 'Circe', sans-serif;
   font-size: 14px;
   font-weight: 400;
 }

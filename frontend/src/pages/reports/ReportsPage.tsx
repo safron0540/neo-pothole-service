@@ -1,20 +1,8 @@
 import { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { 
-  BarChart3, 
-  Timer, 
-  RotateCcw, 
-  Calendar, 
-  Route, 
-  Building2, 
-  HardHat, 
-  FileSpreadsheet, 
-  Download, 
-  Check, 
-  Clock, 
-  TrendingUp 
-} from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
+import { IconSelect } from '../../components/IconSelect';
+import { Icon } from '../../components/Icon';
 
 interface ReportRow {
   number: string;
@@ -40,16 +28,19 @@ const MOCK_REPORT_DATA: ReportRow[] = [
   { number: '10', group: 'Б', district: 'Аникино (Кировский)', contractor: 'МУП «Автодор-Север»', totalDefects: 66, inTime: 63, overdue: 3, avgTime: 17.1 },
 ];
 
+const PERIODS = ['Сентябрь 2026', 'Август 2026', 'Июль 2026', 'Май 2024', 'Апрель 2024'];
+
 export default function ReportsPage() {
   const [reportType, setReportType] = useState<'count' | 'time'>('count');
-  const [period, setPeriod] = useState('Май 2024');
-  const [category, setCategory] = useState('Все категории');
-  const [district, setDistrict] = useState('Все округа');
-  const [contractor, setContractor] = useState('Все подрядчики');
-  const [isGenerated, setIsGenerated] = useState(true);
+  // Пустое значение = «не выбрано» (в готовом отчёте это «Все …»)
+  const [period, setPeriod] = useState('');
+  const [category, setCategory] = useState('');
+  const [district, setDistrict] = useState('');
+  const [contractor, setContractor] = useState('');
+  const [isGenerated, setIsGenerated] = useState(false);
 
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 5;
+  const PAGE_SIZE = 10; // как в макете: «Показано 10 из 10 записей»
 
   // Округ — это название в скобках: «Каштак (Ленинский)» → «Ленинский»
   const districtOf = (row: ReportRow) => row.district.match(/\(([^)]+)\)/)?.[1] ?? row.district;
@@ -62,16 +53,16 @@ export default function ReportsPage() {
     []
   );
 
-  const filteredRows = useMemo(
-    () =>
-      MOCK_REPORT_DATA.filter(
-        (r) =>
-          (category === 'Все категории' || `Категория ${r.group}` === category) &&
-          (district === 'Все округа' || districtOf(r) === district) &&
-          (contractor === 'Все подрядчики' || r.contractor === contractor)
-      ),
-    [category, district, contractor]
-  );
+  const filteredRows = useMemo(() => {
+    const rows = MOCK_REPORT_DATA.filter(
+      (r) =>
+        (!category || `Категория ${r.group}` === category) &&
+        (!district || districtOf(r) === district) &&
+        (!contractor || r.contractor === contractor)
+    );
+    // Вкладка «Среднее время устранения» — самые долгие участки сверху
+    return reportType === 'time' ? [...rows].sort((a, b) => b.avgTime - a.avgTime) : rows;
+  }, [category, district, contractor, reportType]);
 
   // Итоги считаются по выбранным строкам; среднее время — взвешенное по числу дефектов
   const totals = useMemo(() => {
@@ -92,8 +83,10 @@ export default function ReportsPage() {
   }, [filteredRows]);
 
   const maxPage = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-  const currentRows = filteredRows.slice((Math.min(page, maxPage) - 1) * PAGE_SIZE, Math.min(page, maxPage) * PAGE_SIZE);
-  const fmt = (n: number) => n.toLocaleString('ru-RU');
+  const currentPage = Math.min(page, maxPage);
+  const currentRows = filteredRows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const fmt = (n: number) => n.toLocaleString('en-US');
+  const fileName = `Отчёт_${period.replace(/\s+/g, '_')}.xlsx`;
 
   const handleExportExcel = () => {
     const exportData = filteredRows.map((row) => ({
@@ -121,245 +114,291 @@ export default function ReportsPage() {
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Сводная ведомость');
-    XLSX.writeFile(workbook, `Отчёт_${period.replace(/\s+/g, '_') || 'Май_2024'}.xlsx`);
+    XLSX.writeFile(workbook, fileName);
   };
 
-  return (
-    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-neutral-100 text-neutral-800 antialiased p-4">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900 leading-tight">Аналитические отчёты</h1>
-          <p className="text-xs text-neutral-400 mt-1 font-light">
-            Статистика выполнения заявок ямочного ремонта и соблюдения нормативных сроков
-          </p>
-        </div>
+  const resetAll = () => {
+    setPeriod('');
+    setCategory('');
+    setDistrict('');
+    setContractor('');
+    setPage(1);
+    setIsGenerated(false);
+  };
 
-        <div className="bg-white rounded-2xl p-1.5 border border-neutral-200/80 shadow-sm flex items-center gap-1 text-xs">
-          <button
-            onClick={() => setReportType('count')}
-            className={`px-4 py-2 rounded-xl font-bold flex items-center gap-2 cursor-pointer transition-all ${
-              reportType === 'count' ? 'bg-neutral-50 text-red-700 shadow-sm border border-neutral-200' : 'text-neutral-500 hover:text-black'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Количество заявок</span>
-          </button>
-          <button
-            onClick={() => setReportType('time')}
-            className={`px-4 py-2 rounded-xl font-bold flex items-center gap-2 cursor-pointer transition-all ${
-              reportType === 'time' ? 'bg-neutral-50 text-red-700 shadow-sm border border-neutral-200' : 'text-neutral-500 hover:text-black'
-            }`}
-          >
-            <Timer className="w-4 h-4" />
-            <span>Среднее время устранения</span>
-          </button>
+  const allCategories = isGenerated ? 'Все категории' : 'Выберите категорию...';
+  const allDistricts = isGenerated ? 'Все районы' : 'Выберите район...';
+  const allContractors = isGenerated ? 'Все подрядчики' : 'Выберите подрядчика...';
+
+  const fields = (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold leading-[14px] text-neutral-600">
+            Отчётный период <span className="text-red-700">*</span>
+          </span>
+          {!isGenerated && <span className="text-xs text-neutral-600">ДД.ММ.ГГГГ</span>}
         </div>
+        <IconSelect iconName="field-calendar" ariaLabel="Отчётный период" value={period} onChange={setPeriod} placeholder="Выберите период...">
+          {PERIODS.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </IconSelect>
       </div>
 
-      <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-xs font-bold text-neutral-800 uppercase tracking-wider">Параметры выборки</span>
-          <button
-            onClick={() => { setPeriod(''); setCategory('Все категории'); setDistrict('Все округа'); setContractor('Все подрядчики'); setPage(1); setIsGenerated(false); }}
-            className="text-sm font-bold text-neutral-400 hover:text-neutral-800 flex items-center gap-1 cursor-pointer"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Сбросить значения</span>
-          </button>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[11px] font-bold leading-[14px] text-neutral-600">Категория улицы / группа</span>
+        <IconSelect iconName="field-category" ariaLabel="Категория улицы" value={category} onChange={(v) => { setCategory(v); setPage(1); }} placeholder={allCategories}>
+          <option value="Категория А">Категория А</option>
+          <option value="Категория Б">Категория Б</option>
+          <option value="Категория В">Категория В</option>
+        </IconSelect>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[11px] font-bold leading-[14px] text-neutral-600">Административный округ</span>
+        <IconSelect iconName="field-district" ariaLabel="Административный округ" value={district} onChange={(v) => { setDistrict(v); setPage(1); }} placeholder={allDistricts}>
+          {districtOptions.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </IconSelect>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[11px] font-bold leading-[14px] text-neutral-600">Подрядная организация</span>
+        <IconSelect iconName="field-contractor" ariaLabel="Подрядная организация" value={contractor} onChange={(v) => { setContractor(v); setPage(1); }} placeholder={allContractors}>
+          {contractorOptions.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </IconSelect>
+      </div>
+    </div>
+  );
+
+  const tab = (id: 'count' | 'time', label: string, iconName: string) => {
+    const active = reportType === id;
+    return (
+      <button
+        type="button"
+        onClick={() => { setReportType(id); setPage(1); }}
+        className={`flex items-center gap-2 rounded-lg px-4 py-2 cursor-pointer transition-colors ${
+          active ? 'bg-white shadow-[0_1px_1px_rgba(0,0,0,0.05)]' : 'hover:bg-white/60'
+        }`}
+      >
+        {/* Горит только иконка активной вкладки, текст остаётся обычным */}
+        <Icon name={iconName} className={`h-3.5 w-3.5 ${active ? 'text-red-700' : 'text-neutral-600'}`} />
+        <span className={`text-xs font-light ${active ? 'text-neutral-800' : 'text-neutral-600'}`}>{label}</span>
+      </button>
+    );
+  };
+
+  // Макет «Веб/Отчеты»: поля 16, зазор между блоками 16
+  return (
+    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-neutral-100 text-neutral-800 antialiased p-4 gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 pb-4">
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-2xl font-bold leading-tight text-neutral-800">Аналитические отчёты</h1>
+          <p className="text-sm text-neutral-600">Статистика выполнения заявок ямочного ремонта и соблюдения нормативных сроков</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <div className="flex items-center justify-between text-xs text-neutral-600 mb-1.5 font-medium">
-              <span>Отчётный период <span className="text-red-600">*</span></span>
-              <span className="text-xs text-neutral-400">ДД.ММ.ГГГГ</span>
-            </div>
-            <div className="relative">
-              <Calendar className="w-4 h-4 text-neutral-400 absolute left-3 top-3.5" />
-              <select value={period} onChange={(e) => setPeriod(e.target.value)} className="w-full h-11 pl-9 pr-4 text-xs bg-neutral-50 border border-neutral-200 rounded-xl outline-none focus:border-red-600 font-medium">
-                <option value="">Выберите период...</option>
-                <option value="Май 2024">Май 2024</option>
-                <option value="Апрель 2024">Апрель 2024</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-xs text-neutral-600 mb-1.5 font-medium">Категория улицы / группа</div>
-            <div className="relative">
-              <Route className="w-4 h-4 text-neutral-400 absolute left-3 top-3.5" />
-              <select value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }} className="w-full h-11 pl-9 pr-4 text-xs bg-neutral-50 border border-neutral-200 rounded-xl outline-none focus:border-red-600 font-medium">
-                <option value="Все категории">Все категории</option>
-                <option value="Категория А">Категория А</option>
-                <option value="Категория Б">Категория Б</option>
-                <option value="Категория В">Категория В</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-xs text-neutral-600 mb-1.5 font-medium">Административный округ</div>
-            <div className="relative">
-              <Building2 className="w-4 h-4 text-neutral-400 absolute left-3 top-3.5" />
-              <select value={district} onChange={(e) => { setDistrict(e.target.value); setPage(1); }} className="w-full h-11 pl-9 pr-4 text-xs bg-neutral-50 border border-neutral-200 rounded-xl outline-none focus:border-red-600 font-medium">
-                <option value="Все округа">Все округа</option>
-                {districtOptions.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-xs text-neutral-600 mb-1.5 font-medium">Подрядная организация</div>
-            <div className="relative">
-              <HardHat className="w-4 h-4 text-neutral-400 absolute left-3 top-3.5" />
-              <select value={contractor} onChange={(e) => { setContractor(e.target.value); setPage(1); }} className="w-full h-11 pl-9 pr-4 text-xs bg-neutral-50 border border-neutral-200 rounded-xl outline-none focus:border-red-600 font-medium">
-                <option value="Все подрядчики">Все подрядчики</option>
-                {contractorOptions.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between mt-5 pt-4 border-t border-neutral-100">
-          <div className="text-xs text-neutral-400 font-light">ⓘ Обязательное условие: выбор диапазона дат</div>
-          <button
-            onClick={() => setIsGenerated(true)}
-            disabled={!period}
-            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${
-              period ? 'bg-red-700 hover:bg-red-800 text-white cursor-pointer' : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Сформировать отчёт</span>
-          </button>
+        <div className="flex items-center rounded-xl bg-neutral-100 p-1.5 shadow-[0_1px_4px_rgba(0,0,0,0.15)]">
+          {tab('count', 'Количество заявок', 'tab-chart')}
+          {tab('time', 'Среднее время устранения', 'tab-timer')}
         </div>
       </div>
 
       {!isGenerated ? (
-        <div className="flex-1 bg-white rounded-3xl border border-neutral-200/80 shadow-sm flex flex-col items-center justify-center p-12 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-neutral-50 border border-neutral-200 flex items-center justify-center mb-4 text-neutral-400">
-            <TrendingUp className="w-8 h-8" />
-          </div>
-          <h3 className="text-lg font-bold text-neutral-800">Задайте параметры и сформируйте отчёт</h3>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-neutral-200/80 px-6 py-3.5 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-3 text-xs text-neutral-600">
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-              <span>Файл готов к скачиванию:</span>
-              <span className="font-bold text-neutral-900">Отчёт_{period.replace(/\s+/g, '_')}.xlsx</span>
+        <>
+          <div className="flex flex-col gap-4 rounded-xl bg-white p-4 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Icon name="sliders" className="h-[15px] w-[15px] text-neutral-800" />
+                <span className="text-sm font-bold text-neutral-800">Параметры выборки</span>
+              </div>
+              <button type="button" onClick={resetAll} className="flex items-center gap-1 text-[11px] font-bold text-neutral-600 hover:text-neutral-800 cursor-pointer">
+                <Icon name="reset-small" className="h-3 w-3" />
+                <span>Сбросить значения</span>
+              </button>
             </div>
-            <button onClick={handleExportExcel} className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-sm font-bold flex items-center gap-1.5 cursor-pointer">
-              <Download className="w-4 h-4" />
+
+            {fields}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <div className="flex items-center gap-2 text-xs text-neutral-600">
+                <Icon name="info" className="h-[15px] w-[15px]" />
+                <span>Обязательное условие для запуска расчета: выбор диапазона дат</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setPage(1); setIsGenerated(true); }}
+                disabled={!period}
+                className={`flex h-11 items-center justify-center gap-2 rounded-xl px-6 text-sm font-bold text-white transition-colors ${
+                  period ? 'bg-red-700 hover:bg-red-800 cursor-pointer' : 'bg-neutral-400 opacity-60 cursor-not-allowed'
+                }`}
+              >
+                <Icon name="report-chart" className="h-[14px] w-[14px]" />
+                <span>Сформировать отчёт</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex min-h-[460px] flex-1 flex-col items-center justify-center rounded-xl bg-white px-8 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+            {/* Плитка и оранжевый значок с воронкой уже нарисованы в файлах SVG */}
+            <div className="relative mb-4">
+              <Icon name="empty-reports" />
+              <Icon name="badge-filter" className="absolute -bottom-2 -right-2" />
+            </div>
+            <h2 className="text-2xl font-bold text-neutral-800">Задайте параметры и сформируйте отчёт</h2>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-end gap-4 rounded-xl bg-white p-4 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+            <div className="min-w-[260px] flex-1">{fields}</div>
+            <button
+              type="button"
+              onClick={resetAll}
+              aria-label="Сбросить параметры"
+              title="Сбросить параметры"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-100 text-neutral-600 hover:bg-neutral-200 cursor-pointer transition-colors"
+            >
+              <Icon name="reset-small" className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => { setPage(1); setIsGenerated(true); }}
+              className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-red-700 px-6 text-sm font-bold text-white hover:bg-red-800 cursor-pointer transition-colors"
+            >
+              <Icon name="refresh" className="h-3 w-3" />
+              <span>Сформировать</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+            <div className="flex items-center gap-3 text-sm text-neutral-800">
+              <Icon name="file" />
+              <span>
+                <span className="font-bold">Файл готов к скачиванию:</span> {fileName}
+                <span className="ml-1 text-xs font-light text-neutral-600">(128 КБ)</span>
+              </span>
+            </div>
+            <button type="button" onClick={handleExportExcel} className="flex h-9 items-center gap-1.5 rounded-lg bg-neutral-100 px-4 text-xs font-bold text-neutral-800 hover:bg-neutral-200 cursor-pointer transition-colors">
+              <Icon name="download" className="h-3 w-3" />
               <span>Скачать файл</span>
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 flex items-center justify-between shadow-sm">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="flex h-[88px] items-center justify-between rounded-xl bg-white px-5 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
               <div>
-                <div className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Всего дефектов</div>
-                <div className="text-3xl font-extrabold text-neutral-900 mt-1">{fmt(totals.totalDefects)}</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.55px] text-neutral-600">Всего дефектов</div>
+                <div className="text-[32px] font-bold leading-10 text-neutral-800">{fmt(totals.totalDefects)}</div>
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 text-neutral-600">
+                <Icon name="kpi-total" className="h-[15px] w-[15px]" />
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 flex items-center justify-between shadow-sm">
+            <div className="flex h-[88px] items-center justify-between rounded-xl bg-white px-5 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
               <div>
-                <div className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Устранено в срок</div>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-3xl font-extrabold text-red-700">{fmt(totals.inTime)}</span>
-                  <span className="text-xs font-semibold text-neutral-500">({totals.inTimePct}%)</span>
+                <div className="text-[11px] font-bold uppercase tracking-[0.55px] text-neutral-600">Устранено в срок</div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-[32px] font-bold leading-10 text-red-700">{fmt(totals.inTime)}</span>
+                  <span className="text-xs text-neutral-600">({totals.inTimePct}%)</span>
                 </div>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-red-50 text-red-700 flex items-center justify-center font-bold">
-                <Check className="w-5 h-5" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50 text-red-700">
+                <Icon name="kpi-on-time" className="h-[18px] w-[18px]" />
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 flex items-center justify-between shadow-sm">
+            <div className="flex h-[88px] items-center justify-between rounded-xl bg-white px-5 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
               <div>
-                <div className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Ср. время устранения</div>
-                <div className="text-3xl font-extrabold text-neutral-900 mt-1">{totals.avgTime} ч</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.55px] text-neutral-600">Ср. время устранения</div>
+                <div className="text-[32px] font-bold leading-10 text-neutral-800">{totals.avgTime} ч</div>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center text-neutral-400">
-                <Clock className="w-5 h-5" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 text-neutral-600">
+                <Icon name="kpi-time" className="h-[17px] w-[17px]" />
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-3xl border border-neutral-200/80 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-5">
+          {/* Таблица: серая шапка #F5F5F5, серая строка «ИТОГО» и серая нижняя полоса с пагинацией */}
+          <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+            <div className="flex min-h-[69px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-600"></span>
-                <h3 className="text-sm font-bold text-neutral-900">Сводная ведомость по участкам</h3>
-                <span className="text-xs text-neutral-400 ml-2 font-light">{filteredRows.length} районов</span>
+                <span className="h-2.5 w-2.5 rounded-full bg-red-700" />
+                <h3 className="text-base font-bold text-neutral-800">Сводная ведомость по участкам</h3>
+                <span className="ml-2 text-xs font-light text-neutral-600">{filteredRows.length} районов</span>
               </div>
-              <button onClick={handleExportExcel} className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-sm font-bold flex items-center gap-1.5 cursor-pointer">
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <button type="button" onClick={handleExportExcel} className="flex h-9 items-center gap-2 rounded-lg bg-neutral-100 px-4 text-xs font-bold text-neutral-800 hover:bg-neutral-200 cursor-pointer transition-colors">
+                <Icon name="export-excel" className="h-[15px] w-[15px]" />
                 <span>Экспорт в Excel (.xlsx)</span>
               </button>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-neutral-200 text-neutral-400 uppercase font-semibold text-xs tracking-wider pb-3">
-                    <th className="py-3 px-3">№</th>
-                    <th className="py-3 px-3">Район / Округ</th>
-                    <th className="py-3 px-3">Подрядчик</th>
-                    <th className="py-3 px-3 text-center">Всего дефектов</th>
-                    <th className="py-3 px-3 text-center">Устранено в срок</th>
-                    <th className="py-3 px-3 text-center">Нарушение срока</th>
-                    <th className="py-3 px-3 text-right">Ср. время (ч)</th>
+                  <tr className="border-b border-neutral-200 bg-neutral-100 text-xs font-bold uppercase leading-4 tracking-[0.6px] text-neutral-600">
+                    <th className="px-4 py-3 text-center w-14">№</th>
+                    <th className="px-4 py-3">Район / Округ</th>
+                    <th className="px-4 py-3">Подрядчик</th>
+                    <th className="px-4 py-3 text-right">Всего<br />дефектов</th>
+                    <th className="px-4 py-3 text-right">Устранено в<br />срок</th>
+                    <th className="px-4 py-3 text-right">Нарушение<br />срока</th>
+                    <th className="px-4 py-3 text-right">Ср. время<br />(ч)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-100">
+                <tbody>
                   {currentRows.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-neutral-400">
+                      <td colSpan={7} className="py-10 text-center text-neutral-600">
                         По выбранным параметрам данных нет
                       </td>
                     </tr>
                   )}
                   {currentRows.map((row) => (
-                    <tr key={row.number} className="hover:bg-neutral-50/80 transition-colors">
-                      <td className="py-3.5 px-3 text-neutral-400 font-medium">{row.number}</td>
-                      <td className="py-3.5 px-3 font-semibold text-neutral-800">{row.district}</td>
-                      <td className="py-3.5 px-3 text-neutral-600">{row.contractor}</td>
-                      <td className="py-3.5 px-3 text-center font-medium text-neutral-700">{row.totalDefects}</td>
-                      <td className="py-3.5 px-3 text-center font-bold text-red-700">{row.inTime}</td>
-                      <td className="py-3.5 px-3 text-center font-bold text-red-600">{row.overdue}</td>
-                      <td className="py-3.5 px-3 text-right font-medium text-neutral-700">{row.avgTime}</td>
+                    <tr key={row.number} className="border-b border-neutral-200 transition-colors hover:bg-neutral-100/50">
+                      <td className="px-4 py-5 text-center text-neutral-600">{row.number}</td>
+                      <td className="px-4 py-5 text-neutral-800">{row.district}</td>
+                      <td className="px-4 py-5 text-neutral-800">{row.contractor}</td>
+                      <td className="px-4 py-5 text-right text-neutral-800">{row.totalDefects}</td>
+                      <td className="px-4 py-5 text-right font-bold text-red-700">{row.inTime}</td>
+                      <td className="px-4 py-5 text-right font-bold text-red-700">{row.overdue}</td>
+                      <td className={`px-4 py-5 text-right text-neutral-800 ${reportType === 'time' ? 'font-bold' : ''}`}>{row.avgTime}</td>
                     </tr>
                   ))}
-                  <tr className="bg-neutral-50 font-bold border-t-2 border-neutral-200 text-neutral-900">
-                    <td className="py-4 px-3 text-base">Σ</td>
-                    <td className="py-4 px-3">ИТОГО</td>
-                    <td className="py-4 px-3 text-neutral-500 font-normal">{totals.contractors} подрядчика</td>
-                    <td className="py-4 px-3 text-center">{fmt(totals.totalDefects)}</td>
-                    <td className="py-4 px-3 text-center text-red-700">{fmt(totals.inTime)}</td>
-                    <td className="py-4 px-3 text-center text-red-600">{fmt(totals.overdue)}</td>
-                    <td className="py-4 px-3 text-right">{totals.avgTime}</td>
+                  <tr className="border-t border-neutral-200 bg-neutral-100">
+                    <td className="px-4 py-3.5 text-center text-sm font-bold text-neutral-600">∑</td>
+                    <td className="px-4 py-3.5 text-sm font-bold text-neutral-800">ИТОГО</td>
+                    <td className="px-4 py-3.5 text-xs text-neutral-600">{totals.contractors} подрядчика</td>
+                    <td className="px-4 py-3.5 text-right text-[15px] font-extrabold text-neutral-800">{fmt(totals.totalDefects)}</td>
+                    <td className="px-4 py-3.5 text-right text-[15px] font-extrabold text-red-700">{fmt(totals.inTime)}</td>
+                    <td className="px-4 py-3.5 text-right text-[15px] font-extrabold text-red-700">{fmt(totals.overdue)}</td>
+                    <td className="px-4 py-3.5 text-right text-[15px] font-extrabold text-neutral-800">{totals.avgTime}</td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
             <Pagination
-              currentPage={Math.min(page, maxPage)}
+              variant="footer"
+              currentPage={currentPage}
               totalItems={filteredRows.length}
               pageSize={PAGE_SIZE}
               onPageChange={setPage}
-              itemLabel="районов"
+              itemLabel="записей"
               note="Данные сверены по ГОСТ Р 50597-2017"
             />
           </div>
-        </div>
+        </>
       )}
     </div>
   );

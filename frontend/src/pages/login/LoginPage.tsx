@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import { User, HardHat, Loader2, KeyRound } from 'lucide-react';
 import logoImg from '../../assets/logo.svg';
 import { api, ApiError, IS_DEMO, DEMO_ACCOUNTS, DEMO_PASSWORD } from '../../api';
 
+import { HardHatIcon, KeyIcon, Spinner, UserIcon } from '../../components/UiIcons';
 interface LoginPageProps {
   onLogin: (role: 'dispatcher' | 'contractor') => void;
 }
@@ -47,11 +47,11 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
   return (
     <main className="flex min-h-screen w-full flex-col items-center justify-center gap-4 bg-white px-4 py-8">
-      <div className="w-full max-w-[460px] rounded-[22px] bg-neutral-100 px-[66px] pb-[47px] pt-[41px]">
+      <div className="w-full max-w-[460px] rounded-[22px] bg-neutral-100 px-6 pb-10 pt-8 sm:px-[66px] sm:pb-[47px] sm:pt-[41px]">
         <form onSubmit={onSubmit} className="flex w-full flex-col items-center gap-[79px]" noValidate>
-          <div className="flex h-[90px] w-[334px] items-center drop-shadow-[0_4px_4px_rgba(0,0,0,0.15)]">
+          <div className="flex h-[90px] w-full max-w-[334px] items-center drop-shadow-[0_4px_4px_rgba(0,0,0,0.15)]">
             <img src={logoImg} alt="Логотип NEO-СЕРВИС" className="h-[90px] w-[67px] shrink-0 object-contain" />
-            <span className="ml-[10px] w-[256px] text-2xl font-bold leading-tight text-black">
+            <span className="ml-[10px] text-xl font-bold leading-tight text-black sm:text-2xl">
               NEO-СЕРВИС: ЯМОЧНЫЙ РЕМОНТ
             </span>
           </div>
@@ -87,7 +87,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             disabled={isLoading}
             className="flex h-[43px] w-[187px] items-center justify-center rounded-xl bg-red-700 text-sm font-normal text-white shadow-[0_4px_4px_rgba(0,0,0,0.15)] transition-colors hover:bg-red-800 disabled:opacity-50 cursor-pointer"
           >
-            {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Войти'}
+            {isLoading ? <Spinner className="h-5 w-5 animate-spin" /> : 'Войти'}
           </button>
         </form>
       </div>
@@ -95,7 +95,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       {IS_DEMO && (
         <div className="w-full max-w-[460px] rounded-2xl border border-neutral-200 bg-white p-4">
           <div className="mb-2 flex items-center gap-1.5 text-xs font-light text-neutral-600">
-            <KeyRound className="h-3.5 w-3.5" />
+            <KeyIcon className="h-3.5 w-3.5" />
             <span>Демо-режим: данные в браузере, сервер не нужен. Нажмите, чтобы подставить логин и пароль</span>
           </div>
           <ul className="space-y-1.5">
@@ -113,7 +113,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                       a.role === 'dispatcher' ? 'bg-neutral-200 text-neutral-700' : 'bg-orange-100 text-orange-800'
                     }`}
                   >
-                    {a.role === 'dispatcher' ? <User className="h-4 w-4" /> : <HardHat className="h-4 w-4" />}
+                    {a.role === 'dispatcher' ? <UserIcon className="h-4 w-4" /> : <HardHatIcon className="h-4 w-4" />}
                   </span>
                   <span className="min-w-0">
                     <span className="block text-sm font-bold text-neutral-800">

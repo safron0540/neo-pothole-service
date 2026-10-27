@@ -11,6 +11,7 @@ import ContractorPage from '../contractor/ContractorPage';
 import { Sidebar } from '../../components/Sidebar';
 import { api, session, AUTH_EXPIRED_EVENT, IS_DEMO } from '../../api';
 
+import { MenuIcon } from '../../components/UiIcons';
 export default function App() {
   // Сессию восстанавливаем из localStorage, если токен ещё есть
   const [userRole, setUserRole] = useState<'dispatcher' | 'contractor' | null>(() =>
@@ -19,6 +20,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'dispatcher' | 'map' | 'planned' | 'reports' | 'contractors' | 'admin' | 'users'>('dispatcher');
 
   const [focusRequestId, setFocusRequestId] = useState<number | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false); // меню на узких экранах
 
   // Токен не удалось обновить (refresh тоже 401) — возвращаем на страницу входа
   useEffect(() => {
@@ -56,11 +58,25 @@ export default function App() {
             onSelectTab={(tabId) => {
               setFocusRequestId(null);
               setActiveTab(tabId as typeof activeTab);
+              setMenuOpen(false);
             }}
             onLogout={handleLogout}
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
           />
 
-          <div className="flex-1 flex flex-col h-full overflow-hidden">
+          <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
+            <div className="lg:hidden flex h-12 shrink-0 items-center gap-3 bg-neutral-600 px-3 text-white">
+              <button
+                type="button"
+                onClick={() => setMenuOpen(true)}
+                aria-label="Открыть меню"
+                className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-white/10 cursor-pointer"
+              >
+                <MenuIcon className="h-5 w-5" />
+              </button>
+              <span className="text-xs font-light leading-tight">NEO-СЕРВИС: ЯМОЧНЫЙ РЕМОНТ</span>
+            </div>
             {activeTab === 'dispatcher' && <DispatcherPage focusRequestId={focusRequestId} />}
             {activeTab === 'map' && (
               <MapPage

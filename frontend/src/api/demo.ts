@@ -50,7 +50,7 @@ const invalid = (message: string) => new ApiError(message, 422, 'validation_erro
 // Заглушка вместо фотографии (SVG data-URI, без сети)
 function photo(label: string, tone: 'before' | 'after'): string {
   const bg = tone === 'before' ? '#616161' : '#2E9E4F';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420"><rect width="640" height="420" fill="${bg}"/><ellipse cx="320" cy="250" rx="${tone === 'before' ? 150 : 90}" ry="${tone === 'before' ? 52 : 28}" fill="${tone === 'before' ? '#212121' : '#9E9E9E'}"/><text x="320" y="80" font-family="Arial" font-size="26" fill="#fff" text-anchor="middle">${tone === 'before' ? 'Фото до ремонта' : 'Фото после ремонта'}</text><text x="320" y="118" font-family="Arial" font-size="20" fill="#E0E0E0" text-anchor="middle">${label}</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420"><rect width="640" height="420" fill="${bg}"/><ellipse cx="320" cy="250" rx="${tone === 'before' ? 150 : 90}" ry="${tone === 'before' ? 52 : 28}" fill="${tone === 'before' ? '#212121' : '#9E9E9E'}"/><text x="320" y="80" font-family="sans-serif" font-size="26" fill="#fff" text-anchor="middle">${tone === 'before' ? 'Фото до ремонта' : 'Фото после ремонта'}</text><text x="320" y="118" font-family="sans-serif" font-size="20" fill="#E0E0E0" text-anchor="middle">${label}</text></svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
@@ -269,17 +269,19 @@ function toOut(r: Rec): DispatcherRequestOut {
     completed_at: r.completed_at,
     photo_before_url: photo(r.address, 'before'),
     photo_after_url: r.photo_after ? photo(r.address, 'after') : null,
-    // Телефон заявителя виден только в «Требует уточнения» (решение В-27)
-    applicant: r.status === 'needs_clarification' ? r.applicant : null,
+    // В демо контакты показаны на всех статусах, как в макете. Настоящий API по решению В-27 отдаёт их только в «Требует уточнения»
+    applicant: r.applicant,
   };
 }
 
 function toContractorOut(r: Rec): ContractorRequestOut {
+  const district = refDistrict(r.district_id);
   return {
     id: r.id,
     status: status(r.status),
     defect_class: r.defect_class,
-    address: r.address,
+    // Контракт: address — «улица, дом, район»
+    address: district ? `${r.address}, ${district.name}` : r.address,
     detected_at: r.detected_at,
     planned_due_at: dueAt(r),
     is_overdue: isOverdue(r),
