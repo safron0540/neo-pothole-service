@@ -20,7 +20,28 @@ docker compose ps                    # db и backend в состоянии healt
 curl http://localhost:8000/api/v1/health   # Windows PowerShell: curl.exe
 ```
 
+Веб-панель и API за nginx: http://localhost:8080 (`NGINX_PORT`; на сервере сюда проксирует Caddy). nginx режет частые попытки входа (429), отдаёт фото по подписанной ссылке (X-Accel-Redirect) и закрывает `/metrics`. Конфиг — [`infra/nginx/nginx.conf`](infra/nginx/nginx.conf). Фото открываются только через nginx: на прямом :8000 тело фото пустое.
+
 Swagger: http://localhost:8000/api/docs. Контракт API v1 для веба и мобильного приложения — [`docs/openapi.json`](docs/openapi.json) (запросы с ответом 501 описаны, но ещё не сделаны; после правки схем: `python -m scripts.export_openapi`). Остановить: `docker compose down` (данные базы сохраняются в томе `pgdata`; удалить их: `docker compose down -v`).
+
+### Мониторинг
+
+```bash
+docker compose --profile monitoring up -d    # Prometheus :9090 и Grafana :3000 (только localhost)
+```
+
+Бэкенд отдаёт метрики на `/metrics` (снаружи nginx его закрывает): число запросов и время ответа по маршрутам. Дашборд «Ямочный ремонт: API» в Grafana появляется сам (`infra/grafana/`): доля запросов быстрее 1 с (ПР-2), запросы в секунду, ошибки 5xx, 95-й перцентиль по маршрутам. Пароль Grafana — `GRAFANA_PASSWORD` в `.env`. На сервере открывать через SSH-туннель: `ssh -L 3000:127.0.0.1:3000 …`.
+
+### Ночная чистка и резервные копии
+
+На сервере в crontab пользователя, который запускает compose (время UTC):
+
+```cron
+30 18 * * * cd /workspace && docker compose exec -T backend python -m scripts.cleanup >> backups/cleanup.log 2>&1
+0 19 * * *  cd /workspace && ./backend/scripts/backup.sh >> backups/backup.log 2>&1
+```
+
+`cleanup` удаляет фото без заявки старше суток (проверили фото, но заявку не подали) и истёкшие refresh-токены. `backup.sh` кладёт в `backups/` дамп базы и архив фото, хранит 7 дней (`KEEP_DAYS`). Как восстановить на чистой машине — в начале [`backend/scripts/backup.sh`](backend/scripts/backup.sh). Папка `backups/` в Git не идёт.
 
 ### База и демо-данные
 

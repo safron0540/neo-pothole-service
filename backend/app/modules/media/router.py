@@ -4,7 +4,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, File, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from app.config import get_settings
 from app.deps import CitizenUser, DbSession
@@ -50,4 +50,10 @@ def get_photo(
     """Ссылки приходят в ответах о заявке (photo_before_url, photo_after_url) и живут 15 минут.
     Неверная или устаревшая подпись — 403."""
     path, mime_type = service.photo_file(session, photo_id, exp, sig)
+    settings = get_settings()
+    if settings.photo_accel_prefix:
+        # Подпись проверена, файл читает и отдаёт nginx (infra/nginx/nginx.conf, /_photos/)
+        relative = path.relative_to(settings.photos_dir).as_posix()
+        accel = {"X-Accel-Redirect": settings.photo_accel_prefix + relative}
+        return Response(headers=accel, media_type=mime_type)
     return FileResponse(path, media_type=mime_type)

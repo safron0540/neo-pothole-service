@@ -12,13 +12,13 @@ import argparse
 
 from sqlalchemy import Connection, text
 
+from app.core import rules
 from scripts import load_zones, overpass
 from scripts.load_streets import ROAD_TYPES, line_ewkt, read_groups
 
 # [D] Решение от 27.10: дороге не из списка (двор, проезд) ставится самая мягкая группа
 DEFAULT_GROUP = "Е"
-# Дорога без названия в OSM: обычно проезд между домами
-UNNAMED = "Внутриквартальный проезд"
+UNNAMED = rules.UNNAMED_ROAD  # дорога без названия в OSM: обычно проезд между домами
 # Служебные дороги, где ям не чинят по заявкам: проезд через окно «МакАвто» и т. п.
 SKIP_SERVICE = ("drive-through", "emergency_access")
 

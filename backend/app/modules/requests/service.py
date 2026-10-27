@@ -461,12 +461,23 @@ HEAT_SQL = text(
         -- Яма греет свою дорогу и её продолжение с тем же названием в пределах reach:
         -- в OSM улица разрезана на куски, и тепло не должно рваться на стыках. Соседние
         -- дворы и перекрёстки не греются, иначе каждая яма задевала бы сотни проездов.
-        SELECT s.id AS street_id, p.location, p.w
+        -- Кандидаты ищутся по названию, а не по расстоянию: так их единицы, а не сотни.
+        -- У безымянных дворов название общее, поэтому они греют только свой кусок.
+        SELECT own.id AS street_id, p.location, p.w
         FROM pits p
         JOIN streets own ON own.id = p.street_id
-        JOIN streets s ON ST_DWithin(s.geom, p.location, :reach)
-            AND (s.id = own.id OR s.name = own.name)
-        WHERE s.geom && ST_MakeEnvelope(:w, :s, :e, :n, 4326)::geography
+        WHERE own.geom && ST_MakeEnvelope(:w, :s, :e, :n, 4326)::geography
+        UNION ALL
+        SELECT same.id, same.location, same.w
+        FROM (
+            SELECT s.id, s.geom, p.location, p.w
+            FROM pits p
+            JOIN streets own ON own.id = p.street_id AND own.name <> :unnamed
+            JOIN streets s ON s.name = own.name AND s.id <> own.id
+            OFFSET 0  -- не даёт планировщику уйти в пространственный индекс
+        ) AS same
+        WHERE ST_DWithin(same.geom, same.location, :reach)
+          AND same.geom && ST_MakeEnvelope(:w, :s, :e, :n, 4326)::geography
     ), near AS (
         SELECT s.id, s.name, s.geom, ST_Length(s.geom) AS len
         FROM streets s
@@ -533,6 +544,7 @@ def heatmap(session: Session, f: RequestFilter, bbox: str, zoom: int) -> Heatmap
                 "lats": [p[1] for p in pits],
                 "ws": [float(p[2]) for p in pits],
                 "streets": [p[3] for p in pits],
+                "unnamed": rules.UNNAMED_ROAD,
                 "w": west,
                 "s": south,
                 "e": east,

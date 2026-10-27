@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     photos_dir: str = "/data/photos"
     photo_max_bytes: int = 10 * 1024 * 1024  # В-21: больше — 413
     photo_url_minutes: int = 15  # срок подписанной ссылки на фото
+    # За nginx: файл отдаёт nginx по X-Accel-Redirect с этим префиксом (/_photos/). Пусто — сам API
+    photo_accel_prefix: str = ""
 
     ml_url: str = "http://127.0.0.1:8001"
     ml_timeout_seconds: float = 8.0
@@ -50,9 +52,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _secret_is_set_in_prod(self) -> "Settings":
-        # На сервере нельзя случайно запуститься с секретом из примера
-        if self.environment == "prod" and self.jwt_secret == DEV_JWT_SECRET:
-            raise ValueError("JWT_SECRET должен быть задан для environment=prod")
+        # На сервере нельзя случайно запуститься с секретом из примера или коротким: им
+        # подписаны токены и ссылки на фото, подобранный секрет открывает всё
+        if self.environment == "prod" and (
+            self.jwt_secret == DEV_JWT_SECRET or len(self.jwt_secret) < 32
+        ):
+            raise ValueError("JWT_SECRET для environment=prod: свой, не короче 32 символов")
         return self
 
 

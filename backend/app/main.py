@@ -4,7 +4,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app import __version__, errors
+from app import __version__, errors, metrics
 from app.config import get_settings
 from app.modules.admin.router import router as admin_router
 from app.modules.auth.router import router as auth_router
@@ -47,6 +47,7 @@ app = FastAPI(
     openapi_tags=TAGS,
 )
 errors.install(app)
+metrics.install(app)
 # Токен передаётся в заголовке Authorization, cookie не нужны: allow_credentials не включаем
 app.add_middleware(
     CORSMiddleware,

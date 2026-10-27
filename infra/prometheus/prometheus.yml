@@ -1,0 +1,9 @@
+# Prometheus (фаза 6-2): метрики бэкенда раз в 15 с, хранение 15 дней (на сервере мало места)
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: backend
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:8000"]
