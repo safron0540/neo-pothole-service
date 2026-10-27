@@ -87,3 +87,15 @@ def test_photo_served_by_signed_url(client, citizen, monkeypatch):
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg" and response.content == data
     assert client.get(url.replace("sig=", "sig=0")).status_code == 403
+
+
+def test_photo_behind_nginx_by_x_accel(client, citizen, monkeypatch, photos_dir):
+    use_ml(monkeypatch, big())
+    monkeypatch.setattr(service.get_settings(), "photo_accel_prefix", "/_photos/")
+    photo_id = analyze(client, citizen, image_bytes(shade=20)).json()["photo_id"]
+    response = client.get(service.photo_url(uuid.UUID(photo_id)))
+    assert response.status_code == 200 and response.content == b""  # файл отдаст nginx
+    accel = response.headers["x-accel-redirect"]
+    assert (
+        accel.startswith("/_photos/") and (photos_dir / accel.removeprefix("/_photos/")).is_file()
+    )

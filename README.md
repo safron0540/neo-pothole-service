@@ -20,6 +20,8 @@ docker compose ps                    # db и backend в состоянии healt
 curl http://localhost:8000/api/v1/health   # Windows PowerShell: curl.exe
 ```
 
+Веб-панель и API за nginx: http://localhost:8080 (`NGINX_PORT`; на сервере сюда проксирует Caddy). nginx режет частые попытки входа (429), отдаёт фото по подписанной ссылке (X-Accel-Redirect) и закрывает `/metrics`. Конфиг — [`infra/nginx/nginx.conf`](infra/nginx/nginx.conf). Фото открываются только через nginx: на прямом :8000 тело фото пустое.
+
 Swagger: http://localhost:8000/api/docs. Контракт API v1 для веба и мобильного приложения — [`docs/openapi.json`](docs/openapi.json) (запросы с ответом 501 описаны, но ещё не сделаны; после правки схем: `python -m scripts.export_openapi`). Остановить: `docker compose down` (данные базы сохраняются в томе `pgdata`; удалить их: `docker compose down -v`).
 
 ### База и демо-данные
