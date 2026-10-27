@@ -2,11 +2,15 @@
 
 Правило (docs/architecture.md, 9.5): отклонённые с причиной small_pit малые не слитые
 заявки участка (одна заявка — одна яма, В-15) сравниваются с порогом текущей группы улицы
-(В-14). Больше порога — предложение открыто, иначе закрыто [D] (В-16). Состав предложения
-не хранится: он считается запросом по street_id и segment_idx.
+(В-14). Больше порога — предложение открыто, иначе закрыто. Диспетчер решает по открытому
+[D] (В-16): включить в план (planned, участок больше не пересчитывается в open/closed),
+оставить точечный ремонт (declined); включённое в план потом отмечается выполненным (done).
+После declined и done ямы считаются заново, с момента решения: набралось больше порога —
+предложение снова открыто. Состав предложения не хранится: он считается запросом.
 """
 
 import json
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -16,33 +20,43 @@ from app.deps import Pagination
 from app.errors import ApiError
 from app.modules.geo.models import District, Street, StreetGroup
 from app.modules.planned_repair.models import PlannedRepairProposal
-from app.modules.planned_repair.schemas import PlannedRepairDetail, PlannedRepairOut
+from app.modules.planned_repair.schemas import (
+    Decision,
+    DecisionIn,
+    PlannedRepairDetail,
+    PlannedRepairOut,
+)
 from app.modules.requests.models import Request
 from app.modules.requests.schemas import RequestSummary
 from app.schemas import Page, Point, Ref, StatusOut
 
 PLANNED_REASON = "small_pit"  # В-2: только эти отклонения идут в плановый ремонт
 
+# [D] В-16: решение → (из каких статусов можно, какой статус ставится)
+DECISIONS: dict[Decision, tuple[tuple[str, ...], str]] = {
+    "plan": (("open",), "planned"),
+    "spot": (("open",), "declined"),
+    "done": (("planned",), "done"),
+}
+RESTART_COUNT = ("declined", "done")  # после них ямы считаются с момента решения
 
-def _counted(street_id: int, segment_idx: int):
-    return (
+
+def _counted(street_id: int, segment_idx: int, since: datetime | None = None):
+    conditions = [
         Request.street_id == street_id,
         Request.segment_idx == segment_idx,
         Request.status == REJECTED,
         Request.reject_reason == PLANNED_REASON,
         Request.defect_class == "small",
         Request.merged_into_id.is_(None),
-    )
+    ]
+    if since is not None:
+        conditions.append(Request.detected_at > since)
+    return conditions
 
 
 def recalc_segment(session: Session, street_id: int, segment_idx: int) -> None:
     """Пересчитать участок в той же транзакции, что и вызвавшее его действие."""
-    pits = session.scalar(select(func.count()).where(*_counted(street_id, segment_idx)))
-    threshold = session.scalar(
-        select(StreetGroup.max_pits)
-        .join(Street, Street.street_group == StreetGroup.code)
-        .where(Street.id == street_id)
-    )
     proposal = session.scalar(
         select(PlannedRepairProposal)
         .where(
@@ -50,6 +64,13 @@ def recalc_segment(session: Session, street_id: int, segment_idx: int) -> None:
             PlannedRepairProposal.segment_idx == segment_idx,
         )
         .with_for_update()
+    )
+    since = proposal.counted_since if proposal else None
+    pits = session.scalar(select(func.count()).where(*_counted(street_id, segment_idx, since)))
+    threshold = session.scalar(
+        select(StreetGroup.max_pits)
+        .join(Street, Street.street_group == StreetGroup.code)
+        .where(Street.id == street_id)
     )
     is_open = threshold is not None and pits > threshold
     if proposal is None:
@@ -68,7 +89,10 @@ def recalc_segment(session: Session, street_id: int, segment_idx: int) -> None:
     proposal.pits_count = pits
     if threshold is not None:
         proposal.threshold = threshold
-    proposal.status = "open" if is_open else "closed"
+    if proposal.status in ("open", "closed"):
+        proposal.status = "open" if is_open else "closed"
+    elif proposal.status in RESTART_COUNT and is_open:
+        proposal.status = "open"  # после решения снова набрался порог
     session.flush()
 
 
@@ -137,6 +161,8 @@ def _out(session: Session, proposal, street: Street, district: str | None) -> di
         "pits_count": proposal.pits_count,
         "threshold": proposal.threshold,
         "status": proposal.status,
+        "decided_at": proposal.decided_at,
+        "decision_comment": proposal.decision_comment,
         "created_at": proposal.created_at,
         "updated_at": proposal.updated_at,
     }
@@ -198,7 +224,7 @@ def get_proposal(session: Session, proposal_id: int) -> PlannedRepairDetail:
     proposal, street, district = row
     requests = session.scalars(
         select(Request)
-        .where(*_counted(street.id, proposal.segment_idx))
+        .where(*_counted(street.id, proposal.segment_idx, proposal.counted_since))
         .order_by(Request.detected_at, Request.id)
     )
     return PlannedRepairDetail(
@@ -216,3 +242,34 @@ def get_proposal(session: Session, proposal_id: int) -> PlannedRepairDetail:
             for r in requests
         ],
     )
+
+
+def decide(
+    session: Session, actor_id: int, proposal_id: int, body: DecisionIn
+) -> PlannedRepairDetail:
+    """POST /planned-repairs/{id}/decision: в план, точечный ремонт, выполнено (В-16)."""
+    proposal = session.scalar(
+        select(PlannedRepairProposal)
+        .where(PlannedRepairProposal.id == proposal_id)
+        .with_for_update()
+    )
+    if proposal is None:
+        raise ApiError(404, "not_found", "Предложение не найдено")
+    allowed, target = DECISIONS[body.decision]
+    if proposal.status not in allowed:
+        raise ApiError(
+            409,
+            "invalid_transition",
+            "Предложение уже в другом состоянии: обновите страницу",
+            {"status": proposal.status},
+        )
+    now = datetime.now(UTC)
+    proposal.status = target
+    proposal.decided_at = now
+    proposal.decided_by = actor_id
+    proposal.decision_comment = body.comment
+    if target in RESTART_COUNT:
+        proposal.counted_since = now
+        proposal.pits_count = 0
+    session.commit()
+    return get_proposal(session, proposal_id)

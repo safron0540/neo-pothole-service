@@ -6251,7 +6251,7 @@
           "reports"
         ],
         "summary": "Предложения планового ремонта",
-        "description": "По умолчанию только открытые. Предложение открывается, когда отклонённых малых ям\nна участке 100 м больше порога группы улицы, и закрывается само, когда их не больше [D].",
+        "description": "По умолчанию только открытые. Предложение открывается, когда отклонённых малых ям\nна участке 100 м больше порога группы улицы, и закрывается само, когда их не больше.\nРешение диспетчера — POST /planned-repairs/{id}/decision [D] (В-16).",
         "operationId": "list_planned_repairs_api_v1_planned_repairs_get",
         "security": [
           {
@@ -6268,7 +6268,10 @@
                 {
                   "enum": [
                     "open",
-                    "closed"
+                    "closed",
+                    "planned",
+                    "declined",
+                    "done"
                   ],
                   "type": "string"
                 },
@@ -6441,6 +6444,114 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannedRepairDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/planned-repairs/{proposal_id}/decision": {
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Решение по предложению",
+        "description": "«Включить в план» (plan), «Оставить точечный ремонт» (spot), «Ремонт выполнен» (done).\nПосле spot и done ямы участка считаются заново с момента решения [D] (В-16).",
+        "operationId": "decide_planned_repair_api_v1_planned_repairs__proposal_id__decision_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionIn"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7232,6 +7343,37 @@
           "overdue"
         ],
         "title": "CountRow"
+      },
+      "DecisionIn": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "plan",
+              "spot",
+              "done"
+            ],
+            "title": "Decision",
+            "description": "plan и spot — из open; done — из planned. Иначе 409 invalid_transition"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "DecisionIn"
       },
       "DeviceTokenIn": {
         "properties": {
@@ -8772,9 +8914,35 @@
             "type": "string",
             "enum": [
               "open",
-              "closed"
+              "closed",
+              "planned",
+              "declined",
+              "done"
             ],
             "title": "Status"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At",
+            "description": "когда диспетчер принял решение"
+          },
+          "decision_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Comment"
           },
           "created_at": {
             "type": "string",
@@ -8805,6 +8973,8 @@
           "pits_count",
           "threshold",
           "status",
+          "decided_at",
+          "decision_comment",
           "created_at",
           "updated_at",
           "requests"
@@ -8876,9 +9046,35 @@
             "type": "string",
             "enum": [
               "open",
-              "closed"
+              "closed",
+              "planned",
+              "declined",
+              "done"
             ],
             "title": "Status"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At",
+            "description": "когда диспетчер принял решение"
+          },
+          "decision_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Comment"
           },
           "created_at": {
             "type": "string",
@@ -8901,6 +9097,8 @@
           "pits_count",
           "threshold",
           "status",
+          "decided_at",
+          "decision_comment",
           "created_at",
           "updated_at"
         ],
