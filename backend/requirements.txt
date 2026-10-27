@@ -20,3 +20,6 @@ pillow==12.3.0
 
 # HTTP-клиент для ML-сервиса (им же пользуется TestClient в тестах)
 httpx2==2.13.1
+
+# Метрики для Prometheus: /metrics (СВ-8)
+prometheus-client==0.26.0

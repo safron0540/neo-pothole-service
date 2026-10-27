@@ -24,6 +24,14 @@ curl http://localhost:8000/api/v1/health   # Windows PowerShell: curl.exe
 
 Swagger: http://localhost:8000/api/docs. Контракт API v1 для веба и мобильного приложения — [`docs/openapi.json`](docs/openapi.json) (запросы с ответом 501 описаны, но ещё не сделаны; после правки схем: `python -m scripts.export_openapi`). Остановить: `docker compose down` (данные базы сохраняются в томе `pgdata`; удалить их: `docker compose down -v`).
 
+### Мониторинг
+
+```bash
+docker compose --profile monitoring up -d    # Prometheus :9090 и Grafana :3000 (только localhost)
+```
+
+Бэкенд отдаёт метрики на `/metrics` (снаружи nginx его закрывает): число запросов и время ответа по маршрутам. Дашборд «Ямочный ремонт: API» в Grafana появляется сам (`infra/grafana/`): доля запросов быстрее 1 с (ПР-2), запросы в секунду, ошибки 5xx, 95-й перцентиль по маршрутам. Пароль Grafana — `GRAFANA_PASSWORD` в `.env`. На сервере открывать через SSH-туннель: `ssh -L 3000:127.0.0.1:3000 …`.
+
 ### База и демо-данные
 
 ```bash

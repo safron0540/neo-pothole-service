@@ -1,0 +1,8 @@
+# Дашборды из infra/grafana/dashboards подхватываются при старте Grafana
+apiVersion: 1
+providers:
+  - name: pothole
+    folder: Ямочный ремонт
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
