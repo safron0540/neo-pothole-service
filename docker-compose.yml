@@ -37,6 +37,8 @@ services:
     # Фото «до» и «после» переживают пересборку контейнера (PHOTOS_DIR)
     volumes:
       - photos:/data/photos
+      # Ключ Firebase для push (FCM_CREDENTIALS_FILE); папки нет — push выключен
+      - ./secrets:/run/secrets:ro
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
 

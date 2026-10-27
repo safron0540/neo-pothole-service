@@ -402,7 +402,7 @@ ALLOWED = {
 
 - **Отчёты:** JSON; веб строит предпросмотр, SheetJS сохраняет его в .xlsx (REQ-071, 072).
 
-- **Уведомления:** приложение опрашивает /me/notifications раз в 30 с; к итоговой приёмке добавляется push через FCM (В-30) без изменения схемы.
+- **Уведомления:** приложение опрашивает /me/notifications раз в 30 с. Push через FCM HTTP v1 (app/modules/notifications/push.py): после коммита транзакции со сменой статуса уведомления уходят в фоновом потоке на все токены гражданина из device_tokens; токены, которые FCM назвал мёртвыми, удаляются. Включается ключом сервисного аккаунта Firebase (FCM_CREDENTIALS_FILE, файл в secrets/, в Git не идёт); без ключа работает только опрос.
 
 - **Типы для фронта** генерируются из openapi.json; CORS разрешён только адресу веба.
 
@@ -559,7 +559,7 @@ docker compose exec backend python -m scripts.load_zones
 | REQ-ЯР-026     | Карта своих заявок               | GET /me/requests                                                | MVP            |
 | REQ-ЯР-027     | Список «Мои заявки»              | GET /me/requests                                                | MVP            |
 | REQ-ЯР-028     | Детали заявки                    | GET /me/requests/{id}: фото «до» и «после», история             | MVP            |
-| REQ-ЯР-031     | Уведомления                      | notifications, GET /me/notifications (опрос); push FCM к итоговой приёмке | MVP частично   |
+| REQ-ЯР-031     | Уведомления                      | notifications, GET /me/notifications (опрос); push FCM (notifications/push.py, нужен ключ Firebase) | MVP            |
 | REQ-ЯР-032     | Переход из уведомления           | notifications.request_id                                        | MVP            |
 | REQ-ЯР-034     | Распознавание                    | ml_client; photos.ml_json, model_version                        | MVP (заглушка) |
 | REQ-ЯР-035     | Класс ямы                        | model_class, defect_class                                       | MVP            |
