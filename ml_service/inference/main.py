@@ -14,7 +14,6 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 from ultralytics import YOLO
 
-
 MODEL_PATH = "runs_yolo/YOLO26_s/weights/best.pt"
 MODEL_VERSION = "yolo26_s_1.0"
 IMGSZ      = 512
