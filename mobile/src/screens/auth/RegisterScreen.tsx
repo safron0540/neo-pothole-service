@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +7,8 @@ import { Button } from '../../components/Button';
 import { Checkbox } from '../../components/Checkbox';
 import { Logo } from '../../components/Logo';
 import { TextField } from '../../components/TextField';
+import { errorMessage } from '../../api';
+import type { RegisterBody } from '../../api/types';
 import { useAuth } from '../../store/AuthContext';
 import { colors, fontSize } from '../../theme';
 import { isEmail, isPasswordValid, passwordChecks } from '../../utils/validators';
@@ -14,18 +16,40 @@ import { isEmail, isPasswordValid, passwordChecks } from '../../utils/validators
 export default function RegisterScreen() {
   const nav = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { signIn } = useAuth();
+  const { signUp } = useAuth();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [consentPd, setConsentPd] = useState(false);
   const [consentGeo, setConsentGeo] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const nameParts = name.trim().split(/\s+/);
 
-  // БЗ-4: два отдельных согласия; UC-01 А3: без них кнопка недоступна.
   const canSubmit =
-    name.trim().length > 0 && phone.trim().length > 0 && isEmail(email) &&
+    nameParts.length >= 2 && phone.trim().length > 0 && isEmail(email) &&
     isPasswordValid(password) && consentPd && consentGeo;
+
+  async function submit() {
+    if (!canSubmit || busy) return;
+    const body: RegisterBody = {
+      last_name: nameParts[0],
+      first_name: nameParts[1],
+      email: email.trim(),
+      phone: phone.trim(),
+      password,
+      consent_pd: true,
+      consent_geo: true,
+    };
+    setBusy(true);
+    try {
+      await signUp(body);
+    } catch (error) {
+      Alert.alert('Не удалось зарегистрироваться', errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -49,8 +73,7 @@ export default function RegisterScreen() {
           <Checkbox checked={consentPd} onChange={setConsentPd} label="Согласен на обработку персональных данных" />
           <Checkbox checked={consentGeo} onChange={setConsentGeo} label="Согласен на обработку геоданных" />
         </View>
-        {/* TODO: заменить на вызов API регистрации (передать версии документов согласий). */}
-        <Button title="Зарегистрироваться" onPress={signIn} disabled={!canSubmit} />
+        <Button title={busy ? 'Отправка…' : 'Зарегистрироваться'} onPress={submit} disabled={!canSubmit || busy} />
         <Text style={styles.footer}>
           Уже есть аккаунт?{' '}
           <Text style={styles.link} onPress={() => nav.navigate('Login')}>Войти</Text>

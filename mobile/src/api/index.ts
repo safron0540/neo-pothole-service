@@ -10,7 +10,8 @@ export { setSessionExpiredHandler } from './client';
 
 // --- Авторизация ------------------------------------------------------------
 export async function register(body: RegisterBody): Promise<void> {
-  await request('/auth/citizen/register', { method: 'POST', body, auth: false });
+  const pair = await request<TokenPair>('/auth/citizen/register', { method: 'POST', body, auth: false });
+  await saveTokens({ access: pair.access_token, refresh: pair.refresh_token });
 }
 
 export async function login(email: string, password: string): Promise<void> {
