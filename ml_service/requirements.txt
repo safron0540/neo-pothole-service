@@ -33,6 +33,7 @@ pydantic==2.14.1
 pydantic_core==2.50.1
 pyparsing==3.3.3
 python-dateutil==3.0.0
+python-multipart==0.0.32
 PyYAML==6.0.3
 requests==2.34.2
 six==1.17.0
