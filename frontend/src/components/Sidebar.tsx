@@ -72,23 +72,23 @@ export function Sidebar({ activeTab, onSelectTab, onLogout, open = false, onClos
         </nav>
       </div>
 
-      <div className="flex items-center justify-center gap-3 pl-2">
-        <div className="text-right leading-tight">
-          <div className="text-sm font-bold whitespace-nowrap">{shortName(me)}</div>
-          <div className="text-xs font-normal whitespace-nowrap">{me?.role === 'contractor' ? 'Подрядчик' : 'Диспетчер'}</div>
-        </div>
+      {/* Пользователь: аватар, имя и роль, справа — выход; одна строка под разделителем */}
+      <div className="mt-3 flex items-center gap-2.5 border-t border-white/15 pt-3">
         <Icon name="user-avatar" />
+        <div className="min-w-0 flex-1 leading-tight">
+          <div className="truncate text-sm font-bold">{shortName(me)}</div>
+          <div className="truncate text-xs font-normal text-white/75">{me?.role === 'contractor' ? 'Подрядчик' : 'Диспетчер'}</div>
+        </div>
+        <button
+          type="button"
+          onClick={onLogout}
+          title="Выйти"
+          aria-label="Выйти"
+          className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+        >
+          <LogoutIcon className="w-4 h-4" />
+        </button>
       </div>
-
-      <button
-        type="button"
-        onClick={onLogout}
-        title="Выйти"
-        aria-label="Выйти"
-        className="absolute right-2 bottom-2.5 w-7 h-7 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-      >
-        <LogoutIcon className="w-4 h-4" />
-      </button>
       </aside>
     </>
   );

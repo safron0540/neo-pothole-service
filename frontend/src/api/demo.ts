@@ -26,6 +26,7 @@ import type {
   StreetGroupOut,
   StreetOut,
   UserOut,
+  PlannedRepairStatus,
 } from './types';
 import { STATUS_LABEL } from '../data/reference';
 
@@ -343,6 +344,39 @@ const actorName = (u: UserOut) => `${u.last_name} ${u.first_name[0]}.`;
 const ALLOWED_FROM: StatusCode[] = ['on_review', 'needs_clarification'];
 const DECISIONS: StatusCode[] = ['accepted', 'rejected', 'needs_clarification'];
 
+// Плановый ремонт в демо-режиме: настоящие куски улиц Томска по 100 м (из OSM),
+// чтобы участок на карте лежал на дороге, а не где придётся
+const DEMO_PLANNED_SEED: [string, string, StreetGroupCode, number, number, [number, number][]][] = [
+  ['улица Вершинина', 'Кировский район', 'В', 12, 2.5, [[84.96255, 56.45894], [84.96253, 56.45804]]],
+  ['проспект Ленина', 'Советский район', 'А', 5, 3.8, [[84.942, 56.51289], [84.94277, 56.51215]]],
+  ['Красноармейская улица', 'Кировский район', 'Б', 4, 15, [[84.96626, 56.48322], [84.96641, 56.48413]]],
+  ['Учебная улица', 'Кировский район', 'В', 13, 19, [[84.9394, 56.45891], [84.94102, 56.45893]]],
+  ['улица Котовского', 'Кировский район', 'Г', 21, 26, [[84.96766, 56.46141], [84.96764, 56.46051]]],
+  ['улица Фёдора Лыткина', 'Кировский район', 'Г', 19, 41, [[84.97183, 56.45122], [84.97185, 56.45212]]],
+  ['Комсомольский проспект', 'Советский район', 'Б', 6, 47, [[84.98126, 56.49395], [84.98192, 56.49407], [84.98224, 56.49417]]],
+  ['Богашёвский тракт', 'Кировский район', 'А', 4, 52, [[85.11257, 56.38322], [85.11272, 56.3846]]],
+];
+const DEMO_THRESHOLD: Record<StreetGroupCode, number> = { А: 2, Б: 2, В: 10, Г: 16, Д: 42, Е: 104 };
+const DEMO_PLANNED = DEMO_PLANNED_SEED.map(([street, district, group, pits, hoursAgo, line], i) => {
+  const mid = line[Math.floor(line.length / 2)];
+  return {
+    id: i + 1,
+    street: { id: 100 + i, name: street },
+    district: { id: 10 + i, name: district },
+    street_group: group,
+    segment_idx: 0,
+    segment: { type: 'LineString' as const, coordinates: line },
+    center: { lat: mid[1], lon: mid[0] },
+    pits_count: pits,
+    threshold: DEMO_THRESHOLD[group],
+    status: 'open' as PlannedRepairStatus,
+    decided_at: null as string | null,
+    decision_comment: null as string | null,
+    created_at: new Date(Date.now() - hoursAgo * 36e5).toISOString(),
+    updated_at: new Date(Date.now() - hoursAgo * 36e5).toISOString(),
+  };
+});
+
 export function createDemoApi(): RealApi {
   return {
     // ---- Авторизация ----
@@ -517,7 +551,53 @@ export function createDemoApi(): RealApi {
       return toContractorOut(next);
     },
 
+    // ---- Плановый ремонт ----
+    getPlannedRepairs: async (params) => {
+      await sleep();
+      const items = DEMO_PLANNED.filter(
+        (p) => (!params?.status || p.status === params.status) && (!params?.street_group || p.street_group === params.street_group)
+      );
+      const offset = params?.offset ?? 0;
+      const limit = params?.limit ?? 50;
+      return { items: items.slice(offset, offset + limit), total: items.length, limit, offset };
+    },
+
+    getPlannedRepair: async (id) => {
+      await sleep();
+      const found = DEMO_PLANNED.find((p) => p.id === id);
+      if (!found) throw new ApiError('Предложение не найдено', 404, 'not_found');
+      const requestsOf = Array.from({ length: found.pits_count }, (_, i) => ({
+        id: found.id * 100 + i + 1,
+        status: { code: 'rejected' as const, label: STATUS_LABEL.rejected },
+        defect_class: 'small' as const,
+        address: found.street.name,
+        detected_at: found.created_at,
+        planned_due_at: null,
+        is_overdue: false,
+      }));
+      return { ...found, requests: requestsOf };
+    },
+
+    decidePlannedRepair: async (id, decision, comment) => {
+      await sleep();
+      const found = DEMO_PLANNED.find((p) => p.id === id);
+      if (!found) throw new ApiError('Предложение не найдено', 404, 'not_found');
+      const allowed = decision === 'done' ? found.status === 'planned' : found.status === 'open';
+      if (!allowed) throw new ApiError('Предложение уже в другом состоянии: обновите страницу', 409, 'invalid_transition');
+      found.status = decision === 'plan' ? 'planned' : decision === 'spot' ? 'declined' : 'done';
+      found.decided_at = new Date().toISOString();
+      found.decision_comment = comment ?? null;
+      return { ...found, requests: [] };
+    },
+
     // ---- Карта ----
+    // В демо-режиме улиц нет, поэтому окрашивать нечего: тепловая карта пустая
+    getHeatmap: async (params) => {
+      await sleep();
+      const detail = params.zoom <= 12 ? 'street' : params.zoom <= 15 ? 'piece' : 'segment';
+      return { type: 'FeatureCollection', detail, features: [], outside_streets: 0 };
+    },
+
     getMapPoints: async (params) => {
       await sleep();
       const [w, s, e, n] = params.bbox.split(',').map(Number);

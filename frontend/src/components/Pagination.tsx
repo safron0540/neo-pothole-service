@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
 
 
@@ -25,6 +25,18 @@ export const Pagination: React.FC<PaginationProps> = ({
 }) => {
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
 
+  // Узкая колонка (очередь диспетчера): кнопки помельче и подпись короче, чтобы всё
+  // стояло в одну строку и не вылезало за карточку
+  const root = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setCompact(entry.contentRect.width < 420));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const getPageNumbers = () => {
     if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
     if (currentPage <= 3) return [1, 2, 3, '...', totalPages];
@@ -37,19 +49,21 @@ export const Pagination: React.FC<PaginationProps> = ({
   const endItem = Math.min(currentPage * pageSize, totalItems);
   const shown = Math.max(0, endItem - startItem + 1);
 
-  const square = 'w-8 h-8 rounded-lg flex items-center justify-center text-sm cursor-pointer transition-colors select-none';
+  const square = `${compact ? 'w-7 h-7' : 'w-8 h-8'} shrink-0 rounded-lg flex items-center justify-center text-sm cursor-pointer transition-colors select-none`;
   const idle = variant === 'footer' ? 'bg-white hover:bg-neutral-200' : 'bg-neutral-100 hover:bg-neutral-200';
 
   return (
     <div
-      className={`flex items-center justify-between select-none ${
-        variant === 'footer' ? 'bg-neutral-100 px-5 py-2.5' : 'pt-2'
+      ref={root}
+      className={`flex items-center select-none ${compact ? 'justify-center gap-4' : 'justify-between gap-2'} ${
+        variant === 'footer' ? 'bg-neutral-100 px-5 py-2.5' : compact ? '' : 'pt-2'
       }`}
     >
-      <div className="text-xs font-light text-neutral-700 whitespace-nowrap">
+      <div className="min-w-0 truncate text-sm text-neutral-600 whitespace-nowrap">
         {totalItems > 0 ? (
           <span>
-            Показано {shown} из {totalItems.toLocaleString('ru-RU')}
+            {compact ? '' : 'Показано '}
+            {shown} из {totalItems.toLocaleString('ru-RU')}
             {itemLabel ? ` ${itemLabel}` : ''}
           </span>
         ) : (
@@ -58,7 +72,7 @@ export const Pagination: React.FC<PaginationProps> = ({
         {note && <span className="ml-2 text-neutral-500">• {note}</span>}
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className={`flex shrink-0 items-center ${compact ? 'gap-0.5' : 'gap-1'}`}>
         <button
           type="button"
           aria-label="Предыдущая страница"
@@ -72,7 +86,7 @@ export const Pagination: React.FC<PaginationProps> = ({
         {pages.map((p, idx) => {
           if (p === '...') {
             return (
-              <span key={`dots-${idx}`} className="px-1 text-neutral-500">
+              <span key={`dots-${idx}`} className="px-0.5 text-neutral-500">
                 ...
               </span>
             );

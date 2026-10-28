@@ -21,6 +21,7 @@ function resolveApiUrl(): string {
 }
 
 export const API_URL = resolveApiUrl();
+export const TILE_URL = `${API_URL.replace(/\/api\/v1\/?$/, '')}/tiles/{z}/{x}/{y}.png`;
 
 export const REQUEST_TIMEOUT_MS = 15_000;
 // ML на сервере отвечает до 8 с, поэтому для проверки фото таймаут больше.
