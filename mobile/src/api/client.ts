@@ -4,6 +4,7 @@ import { clearTokens, getTokens, loadTokens, saveTokens } from './tokens';
 import type { TokenPair } from './types';
 
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
+type ApiResponse = Pick<Response, 'ok' | 'status' | 'text'>;
 
 export interface RequestOptions {
   method?: Method;
@@ -30,31 +31,75 @@ function buildUrl(path: string, query?: RequestOptions['query']) {
   return `${API_URL}${path}${qs ? `?${qs}` : ''}`;
 }
 
-async function send(path: string, o: RequestOptions, token?: string): Promise<Response> {
+function sendMultipart(path: string, o: RequestOptions, token?: string): Promise<ApiResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const method = o.method ?? 'GET';
+    xhr.open(method, buildUrl(path, o.query));
+    xhr.timeout = o.timeoutMs ?? REQUEST_TIMEOUT_MS;
+    xhr.setRequestHeader('Accept', 'application/json');
+    if (token) xhr.setRequestHeader('Authorization', ['Bearer', token].join(' '));
+
+    xhr.onload = () => {
+      const status = xhr.status;
+      if (status === 0) {
+        reject(new ApiError(0, 'network', `Не удалось отправить запрос ${method} ${path}: сервер не вернул HTTP-статус`));
+        return;
+      }
+      resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        text: async () => xhr.responseText,
+      });
+    };
+    xhr.onerror = () => {
+      reject(new ApiError(0, 'network', `Не удалось отправить запрос ${method} ${path}: XMLHttpRequest network error`));
+    };
+    xhr.ontimeout = () => {
+      reject(new ApiError(0, 'timeout', 'Сервер не отвечает. Попробуйте ещё раз.'));
+    };
+    xhr.onabort = () => {
+      reject(new ApiError(0, 'network', `Запрос ${method} ${path} был прерван`));
+    };
+
+    try {
+      xhr.send(o.form);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      reject(new ApiError(0, 'network', `Не удалось отправить запрос ${method} ${path}: ${reason}`));
+    }
+  });
+}
+
+async function send(path: string, o: RequestOptions, token?: string): Promise<ApiResponse> {
+  if (o.form) return sendMultipart(path, o, token);
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), o.timeoutMs ?? REQUEST_TIMEOUT_MS);
+  const method = o.method ?? 'GET';
   try {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (o.body !== undefined) headers['Content-Type'] = 'application/json';
     if (token) headers.Authorization = `Bearer ${token}`;
-    // Для multipart Content-Type не задаём: boundary подставит сам fetch.
     return await fetch(buildUrl(path, o.query), {
-      method: o.method ?? 'GET',
+      method,
       headers,
-      body: o.form ?? (o.body !== undefined ? JSON.stringify(o.body) : undefined),
+      body: o.body !== undefined ? JSON.stringify(o.body) : undefined,
       signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
     if (controller.signal.aborted) {
       throw new ApiError(0, 'timeout', 'Сервер не отвечает. Попробуйте ещё раз.');
     }
-    throw new ApiError(0, 'network', 'Нет связи с сервером. Проверьте интернет.');
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`[API] ${method} ${path} failed: ${reason}`);
+    throw new ApiError(0, 'network', `Не удалось отправить запрос ${method} ${path}: ${reason}`);
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function parse(res: Response): Promise<unknown> {
+async function parse(res: ApiResponse): Promise<unknown> {
   if (res.status === 204) return undefined;
   const text = await res.text();
   if (!text) return undefined;
@@ -72,7 +117,7 @@ function fallbackMessage(status: number) {
   return 'Что-то пошло не так. Попробуйте ещё раз.';
 }
 
-function toError(res: Response, data: unknown): ApiError {
+function toError(res: ApiResponse, data: unknown): ApiError {
   const d = data as { code?: unknown; message?: unknown; details?: unknown } | undefined;
   if (d && typeof d === 'object' && typeof d.code === 'string') {
     return new ApiError(
@@ -85,7 +130,7 @@ function toError(res: Response, data: unknown): ApiError {
   return new ApiError(res.status, `http_${res.status}`, fallbackMessage(res.status));
 }
 
-async function handle<T>(res: Response): Promise<T> {
+async function handle<T>(res: ApiResponse): Promise<T> {
   const data = await parse(res);
   if (!res.ok) throw toError(res, data);
   return data as T;
