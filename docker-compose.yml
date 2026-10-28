@@ -58,8 +58,10 @@ services:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       # Фото отдаёт nginx по X-Accel-Redirect после проверки подписи в API
       - photos:/data/photos:ro
+      # Кэш тайлов карты переживает перезапуск nginx
+      - tiles:/var/cache/nginx/tiles
     ports:
-      - "127.0.0.1:${NGINX_PORT:-8080}:80"
+      - "${NGINX_PORT:-8080}:80"
 
   # Пока заглушка (ML_STUB_MODE в .env); настоящую модель ведёт ML-разработчик
   ml_service:
@@ -104,5 +106,6 @@ services:
 volumes:
   pgdata:
   photos:
+  tiles:
   prometheus:
   grafana:
