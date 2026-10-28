@@ -662,7 +662,7 @@ export default function MapPage({ onNavigateToRequest }: { onNavigateToRequest?:
                 src={panel.detail.photo_before_url}
                 alt="Фото дефекта"
                 onError={() => setPhotoFailed(true)}
-                className="w-full h-44 rounded-2xl object-cover border border-neutral-200 bg-neutral-100"
+                className="w-full h-44 rounded-2xl object-contain border border-neutral-200 bg-neutral-100"
               />
             ) : (
               <div className="w-full h-44 rounded-2xl bg-neutral-100 border border-neutral-200 flex flex-col items-center justify-center text-neutral-400">

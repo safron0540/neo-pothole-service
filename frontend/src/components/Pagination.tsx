@@ -45,9 +45,8 @@ export const Pagination: React.FC<PaginationProps> = ({
   };
 
   const pages = getPageNumbers();
-  const startItem = (currentPage - 1) * pageSize + 1;
-  const endItem = Math.min(currentPage * pageSize, totalItems);
-  const shown = Math.max(0, endItem - startItem + 1);
+  // «Показано N из M»: сколько записей показано к концу текущей страницы (стр. 2 по 4 из 8 → «8 из 8»)
+  const shown = Math.min(currentPage * pageSize, totalItems);
 
   const square = `${compact ? 'w-7 h-7' : 'w-8 h-8'} shrink-0 rounded-lg flex items-center justify-center text-sm cursor-pointer transition-colors select-none`;
   const idle = variant === 'footer' ? 'bg-white hover:bg-neutral-200' : 'bg-neutral-100 hover:bg-neutral-200';

@@ -283,7 +283,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                   {/* Ссылки на фото подписаны и живут 15 минут — не кэшируем */}
                   <div className="relative mt-4 h-[320px] overflow-hidden rounded-xl bg-neutral-100">
                     {beforeUrl ? (
-                      <img src={beforeUrl} alt="До ремонта" className="h-full w-full object-cover" />
+                      <img src={beforeUrl} alt="До ремонта" className="h-full w-full object-contain" />
                     ) : (
                       <div className="flex h-full items-center justify-center text-neutral-400">
                         <ImageOffIcon className="h-12 w-12" />
@@ -307,7 +307,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                     ПОСЛЕ ремонта
                   </span>
                   {afterUrl ? (
-                    <img src={afterUrl} alt="После ремонта" className="h-full w-full object-cover" />
+                    <img src={afterUrl} alt="После ремонта" className="h-full w-full object-contain" />
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center text-neutral-400">
                       <ImageOffIcon className="mb-2 h-12 w-12" />
