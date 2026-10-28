@@ -39,7 +39,8 @@
         {
           "locationWhenInUsePermission": "Геолокация нужна, чтобы определить место ямы."
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }
