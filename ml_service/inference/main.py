@@ -5,15 +5,17 @@ uvicorn inference.main:app --port 8001
 
 import io
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
 import torch
 from fastapi import FastAPI, HTTPException, UploadFile
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field
 from ultralytics import YOLO
 
-MODEL_PATH = "app/inference/runs_yolo/YOLO26_s/weights/best.pt"
+# Путь от этого файла: работает и в контейнере (/app/inference/...), и при локальном запуске
+MODEL_PATH = Path(__file__).parent / "runs_yolo" / "YOLO26_s" / "weights" / "best.pt"
 MODEL_VERSION = "yolo26_s_1.0"
 IMGSZ = 512
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -25,11 +27,11 @@ model = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global model
-    model = YOLO(MODEL_PATH)
+    model = YOLO(str(MODEL_PATH))
     yield
 
 
-app = FastAPI(title="ML Service (stub)", version=MODEL_VERSION, lifespan=lifespan)
+app = FastAPI(title="ML Service", version=MODEL_VERSION, lifespan=lifespan)
 
 
 class Prediction(BaseModel):
@@ -73,4 +75,7 @@ def predict(image: UploadFile) -> Prediction:
     data = image.file.read()
     if not data:
         raise HTTPException(status_code=422, detail="Пустой файл")
-    return _predict(data)
+    try:
+        return _predict(data)
+    except UnidentifiedImageError as error:
+        raise HTTPException(status_code=422, detail="Файл не похож на фото") from error
