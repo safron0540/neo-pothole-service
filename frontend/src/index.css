@@ -39,8 +39,19 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Скрыть плашку копирайта Leaflet в углу (стили карты подключаются в MapPage и PlannedRepairPage) */
+/* Подпись об авторстве карты (требуется лицензией OpenStreetMap): мелкая, полупрозрачная */
 .leaflet-control-attribution {
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 6px;
+  color: #616161;
+  background: rgba(255, 255, 255, 0.75) !important;
+}
+.leaflet-control-attribution a {
+  color: #616161;
+}
+/* Флаг в префиксе «Leaflet» не показываем ни при каких настройках карты */
+.leaflet-attribution-flag {
   display: none !important;
 }
 

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, GeoJSON, ImageOverlay, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, GeoJSON, ImageOverlay, Tooltip, AttributionControl, useMap, useMapEvents } from 'react-leaflet';
 import type { Map as LeafletMap } from 'leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -14,6 +14,7 @@ import {
   statusLabel,
 } from '../../data/reference';
 import { useReference } from '../../data/useReference';
+import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../../data/mapTiles';
 import { SelectBox } from '../../components/SelectBox';
 import { Icon } from '../../components/Icon';
 import { formatDateTime, remainingInfo } from '../../utils/format';
@@ -413,7 +414,8 @@ export default function MapPage({ onNavigateToRequest }: { onNavigateToRequest?:
 
       <div className="flex-1 w-full h-full min-h-[420px] relative z-0">
         <MapContainer center={[56.495, 84.975]} zoom={13} className="w-full h-full" attributionControl={false}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <TileLayer url={MAP_TILE_URL} attribution={MAP_ATTRIBUTION} />
+          <AttributionControl prefix={false} position="bottomright" />
           <BoundsWatcher onChange={handleBounds} />
           {showHeatmap && <HeatSurface points={points} />}
           {showMarkers &&
