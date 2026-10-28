@@ -3,6 +3,7 @@ import { Pagination } from '../../components/Pagination';
 import { api } from '../../api';
 import type { GeoLineString, StreetGroupCode, StreetOut } from '../../api';
 import { IconSelect } from '../../components/IconSelect';
+import { Dropdown } from '../../components/Dropdown';
 import { useReference } from '../../data/useReference';
 import { useContractorDistricts } from '../../data/contractorDistricts';
 import { useContractorContacts } from '../../data/useContractorContacts';
@@ -246,8 +247,8 @@ export default function AdminPage() {
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-100 text-neutral-800 antialiased">
       <div className="flex-1 overflow-y-auto p-4 flex flex-col">
         <div className="pb-4">
-          <h1 className="text-2xl font-bold leading-tight tracking-[-0.6px] text-neutral-800 sm:text-[32px] sm:leading-[38px] sm:tracking-[-0.8px]">Справочники и параметры системы</h1>
-          <p className="mt-1 max-w-[768px] text-sm text-neutral-600">
+          <h1 className="page-title">Справочники и параметры системы</h1>
+          <p className="page-subtitle max-w-[768px]">
             Управление классификатором улиц, нормативными сроками устранения дефектов, районами и зонами ответственности подрядных организаций.
           </p>
           {referenceError && <p className="mt-1 text-xs text-red-700">Не удалось загрузить справочники: {referenceError}</p>}
@@ -262,7 +263,7 @@ export default function AdminPage() {
                 role="tab"
                 aria-selected={active}
                 onClick={() => setActiveSubTab(tab.id)}
-                className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-base font-normal cursor-pointer transition-colors ${
+                className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-normal cursor-pointer transition-colors ${
                   active
                     ? 'border-neutral-100 bg-white text-red-700 shadow-[0_4px_4px_rgba(0,0,0,0.15)]'
                     : 'border-transparent text-neutral-800 hover:bg-white/60'
@@ -279,7 +280,7 @@ export default function AdminPage() {
           {activeSubTab === 'deadlines' && (
             <div className="bg-white rounded-xl p-6 shadow-[0_1px_1px_rgba(0,0,0,0.05)] space-y-5">
               <div>
-                <h2 className="text-sm font-bold text-neutral-900">Нормативы устранения дефектов по ГОСТ Р 50597-2017</h2>
+                <h2 className="block-title">Нормативы устранения дефектов по ГОСТ Р 50597-2017</h2>
                 <p className="text-xs text-neutral-400 mt-0.5 font-light">
                   Предельные сроки устранения ямочности и порог ям на участке 100 м для планового ремонта
                 </p>
@@ -371,7 +372,7 @@ export default function AdminPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="bg-[#F2F3FF] text-[11px] font-bold uppercase leading-[14px] tracking-[0.55px] text-neutral-600">
+                    <tr className="bg-[#F2F3FF] section-label">
                       <th className="rounded-l-xl px-4 py-3 w-[38%]">Название улицы / участка</th>
                       <th className="px-4 py-3">Район</th>
                       <th className="px-4 py-3">Категория дороги</th>
@@ -390,7 +391,7 @@ export default function AdminPage() {
                         <td className="px-4 py-5 text-neutral-800">{shortDistrict(districts.find((d) => d.id === st.district_id)?.name)}</td>
                         <td className="px-4 py-5">
                           {st.street_group ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFDAD4] px-2.5 py-0.5 text-[11px] font-bold text-neutral-800">
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFDAD4] px-2.5 py-0.5 text-xs font-bold text-neutral-800">
                               <span className={`h-1.5 w-1.5 rounded-full ${st.street_group === 'А' ? 'bg-red-700' : 'bg-neutral-800'}`} />
                               Категория {st.street_group}
                             </span>
@@ -436,7 +437,7 @@ export default function AdminPage() {
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2 text-base font-bold leading-6 text-neutral-800">
                           {c.name}
-                          {!c.is_active && <span className="rounded bg-neutral-200 px-2 py-0.5 text-[11px] font-bold text-neutral-600">отключён</span>}
+                          {!c.is_active && <span className="rounded bg-neutral-200 px-2 py-0.5 text-xs font-bold text-neutral-600">отключён</span>}
                         </div>
                         <div className="flex items-center gap-4 pt-1 text-xs text-neutral-600">
                           <span className="flex items-center gap-1.5">
@@ -515,10 +516,13 @@ export default function AdminPage() {
 
               <div>
                 <label className="block text-neutral-600 mb-1 font-medium">Район *</label>
-                <select
+                <Dropdown
                   value={streetForm.districtId}
-                  onChange={(e) => setStreetForm({ ...streetForm, districtId: e.target.value })}
-                  className="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl outline-none"
+                  onChange={(v) => setStreetForm({ ...streetForm, districtId: v })}
+                  ariaLabel="Район"
+                  mutedWhenEmpty
+                  wrapperClassName="relative block w-full"
+                  className="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl hover:border-neutral-400"
                 >
                   <option value="">Выберите район…</option>
                   {districts.map((d) => (
@@ -526,15 +530,17 @@ export default function AdminPage() {
                       {d.name}
                     </option>
                   ))}
-                </select>
+                </Dropdown>
               </div>
 
               <div>
                 <label className="block text-neutral-600 mb-1 font-medium">Категория дороги</label>
-                <select
+                <Dropdown
                   value={streetForm.group}
-                  onChange={(e) => setStreetForm({ ...streetForm, group: e.target.value as StreetGroupCode | '' })}
-                  className="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl outline-none"
+                  onChange={(v) => setStreetForm({ ...streetForm, group: v as StreetGroupCode | '' })}
+                  ariaLabel="Категория дороги"
+                  wrapperClassName="relative block w-full"
+                  className="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl hover:border-neutral-400"
                 >
                   <option value="">Не указана</option>
                   {streetGroups.map((g) => (
@@ -542,7 +548,7 @@ export default function AdminPage() {
                       Категория {g.code}
                     </option>
                   ))}
-                </select>
+                </Dropdown>
               </div>
 
               {streetModal.mode === 'add' && (

@@ -18,7 +18,7 @@ const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png'];
 function StatusPill({ code, label }: { code: RequestSummary['status']['code']; label: string }) {
   return (
     <span
-      className={`inline-flex h-5 w-[130px] items-center justify-center rounded-xl text-[11px] font-light ${
+      className={`inline-flex h-5 w-[130px] items-center justify-center rounded-xl text-xs font-light ${
         code === 'in_progress' ? 'text-neutral-800' : 'text-white'
       }`}
       style={{ backgroundColor: STATUS_COLOR[code] }}
@@ -247,7 +247,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                   <div className="flex items-start justify-between">
                     <h2 className="text-lg font-bold text-neutral-800">Параметры дефекта</h2>
                     {taskDetail?.street_group && (
-                      <span className="rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold uppercase text-neutral-800">
+                      <span className="rounded bg-neutral-100 px-2 py-1 text-xs font-bold uppercase text-neutral-800">
                         Категория {taskDetail.street_group}
                       </span>
                     )}
@@ -270,7 +270,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                   </div>
 
                   <div className="mt-4 inline-block min-w-[220px] rounded-xl bg-neutral-100 p-3">
-                    <div className="text-[11px] font-bold uppercase text-neutral-600">Класс ямы</div>
+                    <div className="text-xs font-bold uppercase text-neutral-600">Класс ямы</div>
                     <div className="mt-1 text-sm font-bold text-red-700">{DEFECT_CLASS_LABEL[selectedTask.defect_class]} яма</div>
                   </div>
                 </section>
@@ -278,7 +278,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                 <section className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-bold text-neutral-800">Фотофиксация осмотра</h3>
-                    <span className="rounded bg-[#FFDAD6] px-2 py-1 text-[11px] font-bold uppercase text-red-700">До ремонта</span>
+                    <span className="rounded bg-[#FFDAD6] px-2 py-1 text-xs font-bold uppercase text-red-700">До ремонта</span>
                   </div>
                   {/* Ссылки на фото подписаны и живут 15 минут — не кэшируем */}
                   <div className="relative mt-4 h-[320px] overflow-hidden rounded-xl bg-neutral-100">
@@ -302,7 +302,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                 <p className="mt-1 text-xs font-light text-neutral-600">Фотофиксация выполнения и подтверждение закрытия</p>
 
                 <div className="relative mt-4 h-[320px] overflow-hidden rounded-xl bg-neutral-100">
-                  <span className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-neutral-800 shadow-sm">
+                  <span className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-neutral-800 shadow-sm">
                     <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
                     ПОСЛЕ ремонта
                   </span>
@@ -362,8 +362,8 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
         <div className="mx-auto flex max-w-[1334px] flex-col gap-4">
           <div className="flex items-center justify-between pb-1">
             <div className="flex flex-col gap-0.5">
-              <h1 className="text-2xl font-bold leading-tight text-neutral-800">Мои заявки</h1>
-              {orgName && <p className="text-sm text-neutral-600">{orgName}</p>}
+              <h1 className="page-title">Мои заявки</h1>
+              {orgName && <p className="page-subtitle">{orgName}</p>}
             </div>
             {isLoading && <Spinner className="h-4 w-4 animate-spin text-red-700" />}
           </div>
@@ -400,7 +400,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                     {isOverdueTab && <span className="h-1.5 w-1.5 rounded-full bg-[#BA1A1A]" />}
                     <span>{tab.label}</span>
                     <span
-                      className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-[14px] ${
+                      className={`rounded-full px-1.5 py-0.5 text-xs font-bold ${
                         isOverdueTab
                           ? 'bg-[#FFDAD6] text-red-700'
                           : active
@@ -417,7 +417,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
           </div>
 
           <div className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-            <div className="hidden lg:grid grid-cols-[286px_1fr_1fr_253px_1fr] items-center bg-neutral-100 px-[11px] py-2 text-[11px] font-bold uppercase tracking-[0.55px] text-neutral-600">
+            <div className="hidden lg:grid grid-cols-[286px_1fr_1fr_253px_1fr] items-center bg-neutral-100 px-[11px] py-2 section-label">
               <div>ID/ статус</div>
               <div>Адрес дефекта</div>
               <div>Плановый срок</div>
@@ -439,7 +439,7 @@ export default function ContractorPage({ onLogout }: { onLogout?: () => void }) 
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-center gap-1">
                       <span className="text-sm text-neutral-800">№ ЗЯ-{t.id}</span>
-                      <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold leading-[14px] ${badge.cls}`}>{badge.label}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${badge.cls}`}>{badge.label}</span>
                     </div>
                     <span className="text-xs text-neutral-600">{formatDayTime(t.detected_at)}</span>
                   </div>

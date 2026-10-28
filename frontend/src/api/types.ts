@@ -233,6 +233,64 @@ export interface MapQuery {
   detected_to?: string;
 }
 
+// Тепловая карта по дорогам: GET /map/heatmap → GeoJSON для L.geoJSON
+export type HeatLevel = 'low' | 'medium' | 'high' | 'critical';
+export type HeatDetail = 'street' | 'piece' | 'segment';
+
+export interface HeatProperties {
+  street: string;
+  street_id: number | null;
+  segment_idx: number | null; // номер участка 100 м — только при сильном приближении
+  count: number;
+  weight: number; // большая яма — 1, маленькая — 0,5
+  per_100m: number; // по нему бэкенд выбрал level
+  level: HeatLevel;
+}
+
+export interface HeatFeature {
+  type: 'Feature';
+  geometry: { type: 'LineString' | 'MultiLineString'; coordinates: unknown };
+  properties: HeatProperties;
+}
+
+export interface HeatmapOut {
+  type: 'FeatureCollection';
+  detail: HeatDetail;
+  features: HeatFeature[];
+  outside_streets: number; // заявки без улицы в 30 м: их видно только маркерами
+}
+
+export interface HeatmapQuery extends MapQuery {
+  zoom: number;
+}
+
+// Плановый ремонт: участок улицы 100 м, где отклонённых малых ям больше порога группы
+export interface PlannedRepairOut {
+  id: number;
+  street: Ref;
+  district: Ref | null;
+  street_group: StreetGroupCode | null;
+  segment_idx: number;
+  segment: { type: 'LineString'; coordinates: [number, number][] }; // кусок самой улицы, [долгота, широта]
+  center: { lat: number; lon: number };
+  pits_count: number;
+  threshold: number;
+  status: PlannedRepairStatus;
+  decided_at: string | null;
+  decision_comment: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// open/closed ставит бэкенд; planned, declined, done — решение диспетчера (В-16)
+export type PlannedRepairStatus = 'open' | 'closed' | 'planned' | 'declined' | 'done';
+// plan — включить в план, spot — оставить точечный ремонт, done — ремонт по плану выполнен
+export type PlannedRepairDecision = 'plan' | 'spot' | 'done';
+
+export interface PlannedRepairDetail extends PlannedRepairOut {
+  requests: RequestSummary[];
+}
+
 // ---------- Подрядчик ----------
 export interface RequestSummary {
   id: number;
