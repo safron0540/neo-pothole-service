@@ -134,7 +134,7 @@ export default function ReportsPage() {
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold leading-[14px] text-neutral-600">
+          <span className="text-xs font-bold text-neutral-600">
             Отчётный период <span className="text-red-700">*</span>
           </span>
           {!isGenerated && <span className="text-xs text-neutral-600">ДД.ММ.ГГГГ</span>}
@@ -149,7 +149,7 @@ export default function ReportsPage() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] font-bold leading-[14px] text-neutral-600">Категория улицы / группа</span>
+        <span className="text-xs font-bold text-neutral-600">Категория улицы / группа</span>
         <IconSelect iconName="field-category" ariaLabel="Категория улицы" value={category} onChange={(v) => { setCategory(v); setPage(1); }} placeholder={allCategories}>
           <option value="Категория А">Категория А</option>
           <option value="Категория Б">Категория Б</option>
@@ -158,7 +158,7 @@ export default function ReportsPage() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] font-bold leading-[14px] text-neutral-600">Административный округ</span>
+        <span className="text-xs font-bold text-neutral-600">Административный округ</span>
         <IconSelect iconName="field-district" ariaLabel="Административный округ" value={district} onChange={(v) => { setDistrict(v); setPage(1); }} placeholder={allDistricts}>
           {districtOptions.map((d) => (
             <option key={d} value={d}>
@@ -169,7 +169,7 @@ export default function ReportsPage() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] font-bold leading-[14px] text-neutral-600">Подрядная организация</span>
+        <span className="text-xs font-bold text-neutral-600">Подрядная организация</span>
         <IconSelect iconName="field-contractor" ariaLabel="Подрядная организация" value={contractor} onChange={(v) => { setContractor(v); setPage(1); }} placeholder={allContractors}>
           {contractorOptions.map((c) => (
             <option key={c} value={c}>
@@ -193,7 +193,7 @@ export default function ReportsPage() {
       >
         {/* Горит только иконка активной вкладки, текст остаётся обычным */}
         <Icon name={iconName} className={`h-3.5 w-3.5 ${active ? 'text-red-700' : 'text-neutral-600'}`} />
-        <span className={`text-xs font-light ${active ? 'text-neutral-800' : 'text-neutral-600'}`}>{label}</span>
+        <span className={`text-sm ${active ? 'font-bold text-neutral-800' : 'font-normal text-neutral-600'}`}>{label}</span>
       </button>
     );
   };
@@ -203,8 +203,8 @@ export default function ReportsPage() {
     <div className="flex-1 flex flex-col h-full overflow-y-auto bg-neutral-100 text-neutral-800 antialiased p-4 gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 pb-4">
         <div className="flex flex-col gap-1.5">
-          <h1 className="text-2xl font-bold leading-tight text-neutral-800">Аналитические отчёты</h1>
-          <p className="text-sm text-neutral-600">Статистика выполнения заявок ямочного ремонта и соблюдения нормативных сроков</p>
+          <h1 className="page-title">Аналитические отчёты</h1>
+          <p className="page-subtitle">Статистика выполнения заявок ямочного ремонта и соблюдения нормативных сроков</p>
         </div>
 
         <div className="flex items-center rounded-xl bg-neutral-100 p-1.5 shadow-[0_1px_4px_rgba(0,0,0,0.15)]">
@@ -219,10 +219,10 @@ export default function ReportsPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Icon name="sliders" className="h-[15px] w-[15px] text-neutral-800" />
-                <span className="text-sm font-bold text-neutral-800">Параметры выборки</span>
+                <span className="block-title">Параметры выборки</span>
               </div>
-              <button type="button" onClick={resetAll} className="flex items-center gap-1 text-[11px] font-bold text-neutral-600 hover:text-neutral-800 cursor-pointer">
-                <Icon name="reset-small" className="h-3 w-3" />
+              <button type="button" onClick={resetAll} className="h-9 px-3 rounded-lg border border-neutral-300 bg-white flex items-center gap-1.5 text-sm font-bold text-neutral-700 hover:bg-neutral-100 transition-colors cursor-pointer">
+                <Icon name="reset-small" className="h-3.5 w-3.5" />
                 <span>Сбросить значения</span>
               </button>
             </div>
@@ -254,7 +254,7 @@ export default function ReportsPage() {
               <Icon name="empty-reports" />
               <Icon name="badge-filter" className="absolute -bottom-2 -right-2" />
             </div>
-            <h2 className="text-2xl font-bold text-neutral-800">Задайте параметры и сформируйте отчёт</h2>
+            <h2 className="text-lg font-bold text-neutral-800">Задайте параметры и сформируйте отчёт</h2>
           </div>
         </>
       ) : (
@@ -297,7 +297,7 @@ export default function ReportsPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div className="flex h-[88px] items-center justify-between rounded-xl bg-white px-5 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.55px] text-neutral-600">Всего дефектов</div>
+                <div className="section-label">Всего дефектов</div>
                 <div className="text-[32px] font-bold leading-10 text-neutral-800">{fmt(totals.totalDefects)}</div>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 text-neutral-600">
@@ -307,7 +307,7 @@ export default function ReportsPage() {
 
             <div className="flex h-[88px] items-center justify-between rounded-xl bg-white px-5 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.55px] text-neutral-600">Устранено в срок</div>
+                <div className="section-label">Устранено в срок</div>
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-[32px] font-bold leading-10 text-red-700">{fmt(totals.inTime)}</span>
                   <span className="text-xs text-neutral-600">({totals.inTimePct}%)</span>
@@ -320,7 +320,7 @@ export default function ReportsPage() {
 
             <div className="flex h-[88px] items-center justify-between rounded-xl bg-white px-5 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.55px] text-neutral-600">Ср. время устранения</div>
+                <div className="section-label">Ср. время устранения</div>
                 <div className="text-[32px] font-bold leading-10 text-neutral-800">{totals.avgTime} ч</div>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 text-neutral-600">
@@ -346,7 +346,7 @@ export default function ReportsPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-neutral-200 bg-neutral-100 text-xs font-bold uppercase leading-4 tracking-[0.6px] text-neutral-600">
+                  <tr className="border-b border-neutral-200 bg-neutral-100 section-label">
                     <th className="px-4 py-3 text-center w-14">№</th>
                     <th className="px-4 py-3">Район / Округ</th>
                     <th className="px-4 py-3">Подрядчик</th>
@@ -379,10 +379,10 @@ export default function ReportsPage() {
                     <td className="px-4 py-3.5 text-center text-sm font-bold text-neutral-600">∑</td>
                     <td className="px-4 py-3.5 text-sm font-bold text-neutral-800">ИТОГО</td>
                     <td className="px-4 py-3.5 text-xs text-neutral-600">{totals.contractors} подрядчика</td>
-                    <td className="px-4 py-3.5 text-right text-[15px] font-extrabold text-neutral-800">{fmt(totals.totalDefects)}</td>
-                    <td className="px-4 py-3.5 text-right text-[15px] font-extrabold text-red-700">{fmt(totals.inTime)}</td>
-                    <td className="px-4 py-3.5 text-right text-[15px] font-extrabold text-red-700">{fmt(totals.overdue)}</td>
-                    <td className="px-4 py-3.5 text-right text-[15px] font-extrabold text-neutral-800">{totals.avgTime}</td>
+                    <td className="px-4 py-3.5 text-right text-sm font-extrabold text-neutral-800">{fmt(totals.totalDefects)}</td>
+                    <td className="px-4 py-3.5 text-right text-sm font-extrabold text-red-700">{fmt(totals.inTime)}</td>
+                    <td className="px-4 py-3.5 text-right text-sm font-extrabold text-red-700">{fmt(totals.overdue)}</td>
+                    <td className="px-4 py-3.5 text-right text-sm font-extrabold text-neutral-800">{totals.avgTime}</td>
                   </tr>
                 </tbody>
               </table>

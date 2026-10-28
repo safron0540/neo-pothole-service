@@ -8,6 +8,12 @@ import type {
   DispatcherRequestOut,
   DispatcherRequestSummary,
   DistrictOut,
+  HeatmapOut,
+  PlannedRepairDecision,
+  PlannedRepairDetail,
+  PlannedRepairOut,
+  PlannedRepairStatus,
+  HeatmapQuery,
   MapPoint,
   MapQuery,
   MeOut,
@@ -194,6 +200,14 @@ export const realApi = {
 
   // --- Карта ---
   getMapPoints: (params: MapQuery) => request<MapPoint[]>(`/map/points${qs(params)}`),
+  getHeatmap: (params: HeatmapQuery) => request<HeatmapOut>(`/map/heatmap${qs(params)}`),
+
+  // --- Плановый ремонт ---
+  getPlannedRepairs: (params?: { status?: PlannedRepairStatus; street_group?: StreetGroupCode; limit?: number; offset?: number }) =>
+    request<Page<PlannedRepairOut>>(`/planned-repairs${qs(params)}`),
+  getPlannedRepair: (id: number) => request<PlannedRepairDetail>(`/planned-repairs/${id}`),
+  decidePlannedRepair: (id: number, decision: PlannedRepairDecision, comment?: string) =>
+    request<PlannedRepairDetail>(`/planned-repairs/${id}/decision`, json('POST', { decision, comment })),
 
   // --- Справочники ---
   getDistricts: () => request<DistrictOut[]>('/districts'),

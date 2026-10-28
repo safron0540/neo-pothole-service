@@ -6,6 +6,7 @@ import { useReference } from '../../data/useReference';
 import { useMe } from '../../data/useMe';
 
 import { Icon } from '../../components/Icon';
+import { Dropdown } from '../../components/Dropdown';
 import { CloseIcon } from '../../components/UiIcons';
 const ROLE_LABEL: Record<AnyRole, string> = { dispatcher: 'Диспетчер', contractor: 'Подрядчик', citizen: 'Гражданин' };
 const PAGE_SIZE = 4;
@@ -108,8 +109,8 @@ export default function UsersPage() {
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-100 text-neutral-800 antialiased">
       <header className="px-4 pt-4 pb-3 flex flex-wrap items-start justify-between gap-3 shrink-0">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900 leading-tight">Пользователи системы</h1>
-          <p className="text-xs text-neutral-400 mt-1 font-light">Реестр учетных записей сотрудников и роли доступа</p>
+          <h1 className="page-title">Пользователи системы</h1>
+          <p className="page-subtitle">Реестр учетных записей сотрудников и роли доступа</p>
         </div>
 
         <button
@@ -144,7 +145,7 @@ export default function UsersPage() {
                     setRoleFilter(tab.id);
                     setPage(1);
                   }}
-                  className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs cursor-pointer transition-colors ${
+                  className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm cursor-pointer transition-colors ${
                     active ? 'bg-white font-bold text-[#212121]' : 'font-normal text-[#616161] hover:text-[#212121]'
                   }`}
                 >
@@ -166,7 +167,7 @@ export default function UsersPage() {
           <div className="overflow-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-neutral-200 bg-[rgba(248,250,252,0.8)] text-[11px] font-bold uppercase tracking-[0.55px] text-[#212121]">
+                <tr className="border-b border-neutral-200 bg-[rgba(248,250,252,0.8)] section-label">
                   <th className="px-5 py-5 font-bold">Сотрудник</th>
                   <th className="px-4 py-5 font-bold">Роль</th>
                   <th className="px-5 py-5 text-right font-bold">Действия</th>
@@ -192,15 +193,15 @@ export default function UsersPage() {
                             {initialsOf(user)}
                           </div>
                           <div className="min-w-0">
-                            <div className="text-[13px] font-bold leading-[18px] text-[#212121]">{fullName(user)}</div>
-                            <div className="pt-1 text-[11px] leading-[14px] text-[#212121]">{user.login}</div>
+                            <div className="text-xs font-bold leading-[18px] text-[#212121]">{fullName(user)}</div>
+                            <div className="pt-1 text-xs text-[#212121]">{user.login}</div>
                           </div>
                         </div>
                       </td>
 
                       <td className="px-4 py-5">
                         <span
-                          className={`inline-flex h-[26px] items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-bold text-[#212121] ${
+                          className={`inline-flex h-[26px] items-center gap-1.5 rounded-md border px-2.5 text-xs font-bold text-[#212121] ${
                             isDispatcher
                               ? 'border-[rgba(191,219,254,0.6)] bg-[#eff6ff]'
                               : 'border-[rgba(214,107,73,0.3)] bg-[#FFF3EE]'
@@ -214,7 +215,7 @@ export default function UsersPage() {
                       <td className="px-5 py-5 text-right">
                         <button
                           onClick={() => deleteUser(user)}
-                          className="h-[29px] w-[165px] rounded-lg bg-red-700 text-[13px] font-bold text-white shadow-[0_1px_1px_rgba(196,41,21,0.3)] transition-colors hover:bg-red-800 cursor-pointer"
+                          className="h-[29px] w-[165px] rounded-lg bg-red-700 text-xs font-bold text-white shadow-[0_1px_1px_rgba(196,41,21,0.3)] transition-colors hover:bg-red-800 cursor-pointer"
                         >
                           Удалить
                         </button>
@@ -299,22 +300,27 @@ export default function UsersPage() {
 
               <div>
                 <label className="block text-neutral-600 mb-1 font-medium">Роль в системе *</label>
-                <select
+                <Dropdown
                   value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value as Role, contractorId: '' })}
+                  onChange={(v) => setForm({ ...form, role: v as Role, contractorId: '' })}
+                  ariaLabel="Роль в системе"
+                  wrapperClassName="relative block w-full"
                   className={`${inputClass} font-semibold`}
                 >
                   <option value="dispatcher">Диспетчер</option>
                   <option value="contractor">Подрядчик</option>
-                </select>
+                </Dropdown>
               </div>
 
               {form.role === 'contractor' && (
                 <div>
                   <label className="block text-neutral-600 mb-1 font-medium">Подрядная организация *</label>
-                  <select
+                  <Dropdown
                     value={form.contractorId}
-                    onChange={(e) => setForm({ ...form, contractorId: e.target.value })}
+                    onChange={(v) => setForm({ ...form, contractorId: v })}
+                    ariaLabel="Подрядная организация"
+                    mutedWhenEmpty
+                    wrapperClassName="relative block w-full"
                     className={inputClass}
                   >
                     <option value="">Выберите организацию…</option>
@@ -325,7 +331,7 @@ export default function UsersPage() {
                           {c.name}
                         </option>
                       ))}
-                  </select>
+                  </Dropdown>
                 </div>
               )}
 

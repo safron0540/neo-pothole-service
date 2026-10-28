@@ -62,6 +62,18 @@ export default {
       fontFamily: {
         sans: ['Circe', 'sans-serif'],
       },
+      // Одна шкала кеглей на весь веб (Circe мельче обычных шрифтов, поэтому шаг крупнее):
+      // xs — подписи и мелкие кнопки, sm — обычный текст и поля, base — крупный текст,
+      // lg / xl / 2xl — заголовки блоков, карточек и страниц
+      fontSize: {
+        xs: ['13px', '18px'],
+        sm: ['14px', '20px'],
+        base: ['16px', '24px'],
+        lg: ['18px', '26px'],
+        xl: ['20px', '28px'],
+        '2xl': ['24px', '32px'],
+        '3xl': ['30px', '38px'],
+      },
       // У Circe нет начертаний 500 и 600: medium → Regular, semibold → Bold
       fontWeight: {
         medium: '400',

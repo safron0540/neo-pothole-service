@@ -15,6 +15,7 @@ import { DEFECT_CLASS_LABEL, STATUS_COLOR, statusLabel } from '../../data/refere
 import { useReference } from '../../data/useReference';
 import { formatDateTime, formatTime, remainingChip, remainingInfo } from '../../utils/format';
 import { Icon } from '../../components/Icon';
+import { Dropdown } from '../../components/Dropdown';
 
 import { CameraIcon, ImageOffIcon, Spinner } from '../../components/UiIcons';
 const PAGE_SIZE = 4;
@@ -171,7 +172,7 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-100 text-neutral-800 antialiased">
       <header className="min-h-[42px] px-4 sm:px-6 py-1 flex items-center gap-3 shrink-0 border-b border-neutral-200">
-        <h1 className="text-xl sm:text-2xl font-bold leading-tight text-neutral-800">
+        <h1 className="page-title">
           Требует решения: {QUEUE_TABS.find((tab) => tab.id === queueTab)?.title}
         </h1>
         {isQueueLoading && <Spinner className="w-4 h-4 animate-spin text-red-700" />}
@@ -212,7 +213,7 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
                     setPage(1);
                     setSelectedId(null);
                   }}
-                  className={`flex-1 whitespace-nowrap px-2 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                  className={`flex-1 whitespace-nowrap px-2 py-1.5 rounded-lg text-sm font-bold cursor-pointer transition-colors ${
                     active ? 'bg-red-700 text-white shadow-sm' : 'text-neutral-700 hover:bg-neutral-100'
                   }`}
                 >
@@ -242,7 +243,7 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className={`px-2 py-0.5 rounded text-[11px] leading-[16px] font-normal ${CHIP_TONE[chip.tone]}`}>
+                    <span className={`px-2 py-0.5 rounded text-xs font-normal ${CHIP_TONE[chip.tone]}`}>
                       {chip.label}
                     </span>
                     <span className="text-xs text-neutral-600">{formatDateTime(item.detected_at)}</span>
@@ -266,7 +267,7 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
           </div>
 
           {/* Как в макете: плашка «Показано 4 из 8» прижата к низу колонки */}
-          <div className="mt-auto rounded-xl bg-white px-2 py-3 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+          <div className="mt-auto rounded-xl bg-white px-4 py-3 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
             <Pagination currentPage={page} totalItems={total} pageSize={PAGE_SIZE} onPageChange={setPage} />
           </div>
         </section>
@@ -387,7 +388,7 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-normal text-[#131B2E]">Карточка заявки ID {detail.id}</h2>
           <span
-            className="px-3 h-[15px] leading-[15px] rounded-xl text-[11px] font-light text-white"
+            className="px-3 h-[15px] rounded-xl text-xs font-light text-white"
             style={{ backgroundColor: statusColor }}
           >
             {detail.status.label}
@@ -598,17 +599,16 @@ function FieldSelect({
   return (
     <label className={`flex flex-col gap-1 ${className}`}>
       <span className="text-sm text-neutral-600">{label}</span>
-      <span className="relative block">
-        <select
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-[45px] w-full appearance-none truncate rounded-xl border border-neutral-400 bg-white pl-[15px] pr-8 text-sm text-neutral-800/80 shadow-[0_2px_2px_rgba(0,0,0,0.04)] outline-none focus:border-red-700 disabled:bg-neutral-100"
-        >
-          {children}
-        </select>
-        <Icon name="chevron-down" className="pointer-events-none absolute right-[9px] top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-800" />
-      </span>
+      <Dropdown
+        value={value}
+        disabled={disabled}
+        onChange={onChange}
+        ariaLabel={label}
+        wrapperClassName="relative block w-full"
+        className="h-[45px] rounded-xl border border-neutral-400 bg-white pl-[15px] pr-3 text-sm text-neutral-800/80 shadow-[0_2px_2px_rgba(0,0,0,0.04)] hover:border-neutral-600 disabled:bg-neutral-100"
+      >
+        {children}
+      </Dropdown>
     </label>
   );
 }

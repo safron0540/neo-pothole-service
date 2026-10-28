@@ -8,6 +8,7 @@ import { useContractorContacts } from '../../data/useContractorContacts';
 import { shortDistrict } from '../../utils/format';
 
 import { Icon } from '../../components/Icon';
+import { Dropdown } from '../../components/Dropdown';
 import { CloseIcon } from '../../components/UiIcons';
 // Показатели и история заявок появятся с этапом 2 API (отчёты, рейтинг): пока одинаковые для всех подрядчиков
 const DEMO_STATS = {
@@ -125,8 +126,8 @@ export default function ContractorsPage() {
     <div className="flex-1 flex flex-col h-full overflow-y-auto bg-neutral-100 text-neutral-800 antialiased px-4 pb-4">
       <div className="border-b border-neutral-200 py-4 sm:py-6 flex flex-wrap items-center justify-between gap-4 sm:gap-6 shrink-0">
         <div>
-          <h1 className="text-2xl font-bold leading-tight tracking-[-0.6px] text-neutral-800 sm:text-[32px] sm:leading-[38px] sm:tracking-[-0.8px]">Управление подрядчиками</h1>
-          <p className="pt-0.5 text-sm leading-5 text-neutral-600">
+          <h1 className="page-title">Управление подрядчиками</h1>
+          <p className="page-subtitle">
             Рейтинг эффективности, соблюдение регламентных сроков
             <br />и история выполнения заявок
           </p>
@@ -135,26 +136,24 @@ export default function ContractorsPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={openModal}
-            className="h-9 rounded-lg bg-white px-4 text-xs font-bold text-neutral-800 shadow-[0_1px_1px_rgba(0,0,0,0.05)] hover:bg-neutral-200 cursor-pointer transition-colors"
+            className="h-10 rounded-lg bg-white px-4 text-sm font-bold text-neutral-800 shadow-[0_1px_1px_rgba(0,0,0,0.05)] hover:bg-neutral-200 cursor-pointer transition-colors"
           >
             + Добавить подрядчика
           </button>
           <label className="flex h-[52px] items-center gap-[13px] rounded-lg bg-white px-4 py-2.5 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
             <Icon name="calendar" className="h-4 w-[15px] shrink-0 text-red-700" />
             <span className="flex flex-col">
-              <span className="text-[11px] font-light leading-[11px] text-neutral-600">Отчётный период</span>
-              <span className="relative pt-0.5">
-                <select
-                  aria-label="Отчётный период"
-                  value={period}
-                  onChange={(e) => setPeriod(e.target.value)}
-                  className="w-[124px] cursor-pointer appearance-none bg-transparent pr-6 text-sm leading-5 text-neutral-800 outline-none"
-                >
-                  <option value="Апрель 2025">Апрель 2025</option>
-                  <option value="Май 2025">Май 2025</option>
-                </select>
-                <Icon name="chevron-down" className="pointer-events-none absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-800" />
-              </span>
+              <span className="text-xs font-light text-neutral-600">Отчётный период</span>
+              <Dropdown
+                value={period}
+                onChange={setPeriod}
+                ariaLabel="Отчётный период"
+                wrapperClassName="relative block w-[124px] pt-0.5"
+                className="bg-transparent text-sm leading-5 text-neutral-800"
+              >
+                <option value="Апрель 2025">Апрель 2025</option>
+                <option value="Май 2025">Май 2025</option>
+              </Dropdown>
             </span>
           </label>
         </div>
@@ -169,8 +168,8 @@ export default function ContractorsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 items-start gap-x-6 gap-y-4 py-4">
         <section className="lg:col-span-4 flex flex-col gap-4">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold uppercase leading-[14px] tracking-[0.55px] text-neutral-600">Подрядные организации</span>
-            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-bold leading-[14px] text-neutral-800">{contractors.length}</span>
+            <span className="section-label">Подрядные организации</span>
+            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-bold text-neutral-800">{contractors.length}</span>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -189,7 +188,7 @@ export default function ContractorsPage() {
                   } ${c.is_active ? '' : 'opacity-80'}`}
                 >
                   <div>
-                    <h3 className="truncate text-base font-bold leading-6 text-neutral-800">{c.name}</h3>
+                    <h3 className="block-title truncate">{c.name}</h3>
                     <div className="flex items-center gap-1 pt-0.5 text-xs text-neutral-600">
                       <Icon name="map-pin" className="h-[13px] w-[9px] shrink-0 text-red-700" />
                       <span className="truncate">{district ?? 'Район не назначен'}</span>
@@ -206,7 +205,7 @@ export default function ContractorsPage() {
                           выбранный месяц
                         </span>
                       </div>
-                      <span className="text-[11px] leading-[14px] text-neutral-600">
+                      <span className="text-xs text-neutral-600">
                         Показатели не
                         <br />
                         рассчитываются
@@ -230,7 +229,7 @@ export default function ContractorsPage() {
                 <Icon name="empty-contractor" />
                 <Icon name="badge-check" className="absolute -bottom-1 -right-1" />
               </div>
-              <h2 className="mb-2 text-2xl font-bold leading-[30px] tracking-[-0.6px] text-neutral-800">Выберите подрядчика из списка слева</h2>
+              <h2 className="mb-2 text-lg font-bold text-neutral-800">Выберите подрядчика из списка слева</h2>
               <p className="max-w-[512px] text-center text-base leading-[26px] text-neutral-600">
                 Нажмите на организацию для просмотра детальных показателей KPI (число заявок, доля в срок, среднее время устранения) и журнала выполненных работ за
                 выбранный период
@@ -241,7 +240,7 @@ export default function ContractorsPage() {
               <div className="flex flex-col gap-4 rounded-xl bg-white px-6 pb-4 pt-6 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
                 <div className="flex flex-wrap items-start justify-between gap-4 pb-2">
                   <div>
-                    <h2 className="text-2xl font-bold leading-tight text-neutral-800">{selected.name}</h2>
+                    <h2 className="text-xl font-bold leading-tight text-neutral-800">{selected.name}</h2>
                   </div>
                   <div className="text-right text-base leading-6 text-neutral-800">
                     <div>Контакт подрядчика: {contacts[selected.id] ?? '—'}</div>
@@ -297,7 +296,7 @@ export default function ContractorsPage() {
 
                 <div className="overflow-x-auto">
                   <div className="flex min-w-[680px] flex-col gap-2">
-                    <div className="grid grid-cols-10 rounded-lg bg-neutral-100 px-4 py-2 text-[11px] font-bold uppercase leading-[14px] tracking-[0.55px] text-neutral-600">
+                    <div className="grid grid-cols-10 rounded-lg bg-neutral-100 px-4 py-2 section-label">
                       <div className="col-span-3">ID и дата назначения</div>
                       <div className="col-span-3">Адрес дефекта</div>
                       <div className="col-span-2 text-right">Время работ</div>
@@ -323,11 +322,11 @@ export default function ContractorsPage() {
                           </div>
                           <div className="col-span-2 flex flex-col items-end gap-0.5 pt-0.5">
                             <span className={`text-sm leading-5 ${overdue ? 'text-red-700' : 'text-neutral-800'}`}>{task.duration}</span>
-                            <span className="text-[11px] font-bold leading-[14px] text-red-700">{overdue ? task.overdueBy : 'Норма: 24 ч'}</span>
+                            <span className="text-xs font-bold text-red-700">{overdue ? task.overdueBy : 'Норма: 24 ч'}</span>
                           </div>
                           <div className="col-span-2 flex justify-end">
                             <span
-                              className={`flex h-5 w-[90px] items-center justify-center rounded-xl text-[11px] font-light ${
+                              className={`flex h-5 w-[90px] items-center justify-center rounded-xl text-xs font-light ${
                                 task.status === 'Выполнено' ? 'bg-[#2E9E4F] text-white' : 'bg-[#F2B705] text-neutral-800'
                               }`}
                             >
