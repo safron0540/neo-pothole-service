@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,8 +22,9 @@ function Item({ label, icon, active, onPress }: { label: string; icon: IconName;
 export function TabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const current = state.routes[state.index].name;
+  const bottomPadding = Platform.OS === 'web' ? Math.max(insets.bottom, 22) + 6 : insets.bottom + 6;
   return (
-    <View style={[styles.bar, { paddingBottom: insets.bottom + 6 }]}>
+    <View style={[styles.bar, { paddingBottom: bottomPadding }]}>
       <Item label="Карта" icon="location-outline" active={current === 'Map'} onPress={() => navigation.navigate('Map')} />
       <Item label="Новая заявка" icon="add" onPress={() => (navigation as any).navigate('NewReport')} />
       <Item label="Мои заявки" icon="home-outline" active={current === 'MyReports'} onPress={() => navigation.navigate('MyReports')} />
