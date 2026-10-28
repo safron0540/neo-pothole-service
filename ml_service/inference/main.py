@@ -3,12 +3,10 @@ FastAPI-микросервис для инференса YOLO-классифик
 uvicorn inference.main:app --port 8001
 """
 
-import hashlib
 import io
 from contextlib import asynccontextmanager
 from typing import Literal
 
-import numpy as np
 import torch
 from fastapi import FastAPI, HTTPException, UploadFile
 from PIL import Image, ImageOps
@@ -50,7 +48,7 @@ def _predict(img: bytes) -> Prediction:
     img = Image.open(io.BytesIO(img))
     img = ImageOps.exif_transpose(img)
     img = img.convert("RGB")
-    
+
     results = model.predict(source=img, imgsz=IMGSZ, device=DEVICE, verbose=False)
     top1_idx = int(results[0].probs.top1)
     label = results[0].names[top1_idx]
