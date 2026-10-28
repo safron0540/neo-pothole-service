@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +19,8 @@ interface Photo { uri: string; width: number; height: number }
 
 // ФТ-2: не ниже 1280×720 (учитываем любую ориентацию снимка).
 const isBigEnough = (p: Photo) => Math.max(p.width, p.height) >= 1280 && Math.min(p.width, p.height) >= 720;
+const MAX_UPLOAD_DIMENSION = 1920;
+const JPEG_QUALITY = 0.75;
 
 function createRequestId() {
   let seed = Date.now();
@@ -66,12 +69,33 @@ export default function NewReportScreen() {
     if (!cameraRef.current || busy) return;
     setBusy(true);
     try {
-      const p = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+      const p = await cameraRef.current.takePictureAsync({ quality: 1 });
       if (!isBigEnough(p)) {
         Alert.alert('Фото слишком маленькое', 'Нужно фото не меньше 1280×720. Сделайте снимок ещё раз.');
         return;
       }
-      setPhoto({ uri: p.uri, width: p.width, height: p.height });
+      const scale = Math.min(1, MAX_UPLOAD_DIMENSION / Math.max(p.width, p.height));
+      const image = ImageManipulator.ImageManipulator.manipulate(p.uri);
+      if (Math.min(p.width * scale, p.height * scale) >= 720) {
+        image.resize({
+          width: Math.round(p.width * scale),
+          height: Math.round(p.height * scale),
+        });
+      }
+      const rendered = await image.renderAsync();
+      const result = await rendered.saveAsync({
+        format: ImageManipulator.SaveFormat.JPEG,
+        compress: JPEG_QUALITY,
+      });
+      if (!isBigEnough(result)) {
+        throw new Error('Сжатое фото не соответствует минимальному разрешению 1280×720.');
+      }
+      setPhoto({ uri: result.uri, width: result.width, height: result.height });
+    } catch (error) {
+      Alert.alert(
+        'Не удалось подготовить фото',
+        error instanceof Error ? error.message : 'Попробуйте сделать снимок ещё раз.',
+      );
     } finally {
       setBusy(false);
     }
