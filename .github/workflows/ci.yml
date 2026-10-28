@@ -269,6 +269,16 @@ jobs:
             set -euo pipefail
             cd /workspace
             git pull --ff-only origin main
+
+            # Сборка веб-демо мобильного приложения для стенда (/demo/)
+            if [ -d mobile ] && [ -f mobile/package.json ]; then
+              echo "Сборка веб-демо мобильного приложения..."
+              (cd /workspace/mobile && (npm ci --prefer-offline --no-audit --no-fund || npm install))
+              (cd /workspace/mobile && npx expo export --platform web --output-dir ../infra/mobile-demo/app)
+              sed -i 's|src="/_expo/|src="./_expo/|g' /workspace/infra/mobile-demo/app/index.html 2>/dev/null || true
+              sed -i 's|href="/favicon|href="./favicon|g' /workspace/infra/mobile-demo/app/index.html 2>/dev/null || true
+            fi
+
             if [ -f deploy.sh ]; then
               bash deploy.sh
             else
