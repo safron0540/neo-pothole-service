@@ -113,6 +113,28 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
   const items = queue?.items ?? [];
   const total = queue?.total ?? 0;
 
+  // ---- Миниатюры фото в карточках очереди ----
+  // В списке заявок API фото не отдаёт (только в карточке заявки), поэтому для видимых карточек запрашиваем
+  // карточки заявок и берём photo_before_url. Ссылки на фото живут 15 минут, поэтому кэш обновляем раз в 10 минут.
+  // Чтобы не делать лишние запросы, бэкенду можно добавить photo_before_url в DispatcherRequestSummary.
+  const [thumbs, setThumbs] = useState<Record<number, { url: string | null; at: number }>>({});
+  const thumbsRef = useRef(thumbs);
+  useEffect(() => {
+    thumbsRef.current = thumbs;
+  }, [thumbs]);
+
+  useEffect(() => {
+    const now = Date.now();
+    for (const item of items) {
+      const cached = thumbsRef.current[item.id];
+      if (cached && now - cached.at < 10 * 60 * 1000) continue;
+      api
+        .getRequestById(item.id)
+        .then((d) => setThumbs((prev) => ({ ...prev, [item.id]: { url: d.photo_before_url || null, at: Date.now() } })))
+        .catch(() => setThumbs((prev) => ({ ...prev, [item.id]: { url: null, at: Date.now() } })));
+    }
+  }, [items]);
+
   // Как в макете: пока заявка не выбрана, справа подсказка «Выберите заявку из списка слева»
   const activeId = selectedId;
 
@@ -250,8 +272,19 @@ export default function DispatcherPage({ focusRequestId = null }: DispatcherPage
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 shrink-0 rounded-lg border border-neutral-200 bg-neutral-100 flex items-center justify-center text-neutral-400">
-                      <CameraIcon className="w-5 h-5" />
+                    <div className="w-16 h-16 shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 flex items-center justify-center text-neutral-400">
+                      {thumbs[item.id]?.url ? (
+                        // Фото целиком в уменьшенном виде (вертикальные тоже помещаются)
+                        <img
+                          src={thumbs[item.id].url ?? ''}
+                          alt=""
+                          loading="lazy"
+                          onError={() => setThumbs((prev) => ({ ...prev, [item.id]: { url: null, at: Date.now() } }))}
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <CameraIcon className="w-5 h-5" />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-sm text-neutral-600">ID {item.id}</div>
@@ -410,14 +443,21 @@ function RequestCard({ detail, events, onDecided, onConflict, onError }: Request
         <div className="md:col-span-5 flex flex-col gap-[7.5px]">
           <div className="text-sm text-neutral-800">Фото дефекта</div>
           {/* Ссылки на фото подписаны и живут 15 минут — не кэшируем */}
-          <div className="h-[224px] rounded-xl border border-neutral-200 bg-neutral-100 overflow-hidden flex items-center justify-center">
+          {/* Фото показывается целиком: горизонтальное — по ширине колонки, вертикальное (с телефона) — по высоте до 420 px */}
+          <div
+            className={`rounded-xl border border-neutral-200 bg-neutral-100 overflow-hidden flex items-center justify-center ${
+              detail.photo_before_url && !photoFailed ? 'min-h-[160px]' : 'h-[224px]'
+            }`}
+          >
             {detail.photo_before_url && !photoFailed ? (
-              <img
-                src={detail.photo_before_url}
-                alt="Фото дефекта"
-                onError={() => setPhotoFailed(true)}
-                className="w-full h-full object-cover"
-              />
+              <a href={detail.photo_before_url} target="_blank" rel="noreferrer" title="Открыть фото полностью" className="block w-full">
+                <img
+                  src={detail.photo_before_url}
+                  alt="Фото дефекта"
+                  onError={() => setPhotoFailed(true)}
+                  className="mx-auto block h-auto max-h-[420px] w-full object-contain"
+                />
+              </a>
             ) : (
               <div className="flex flex-col items-center text-neutral-500 text-center">
                 <ImageOffIcon className="w-10 h-10 mb-2" />
