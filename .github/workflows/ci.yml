@@ -194,6 +194,7 @@ jobs:
       run:
         working-directory: ./mobile
     env:
+      EXPO_PUBLIC_API_URL: https://pothole.safronspace.ru/api/v1
       GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=512m"
     steps:
       - uses: actions/checkout@v4
