@@ -1,15 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { useNavigation } from '@react-navigation/native';
-import { mockReports } from '../../mocks/reports';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { errorMessage, listAllMyRequests } from '../../api';
+import { TILE_URL } from '../../config';
 import { colors, fontSize, statusColors } from '../../theme';
+import type { Report } from '../../types';
 
-// Карта: Leaflet.js + тайлы OpenStreetMap внутри WebView (СВ-4, ЧТЗ табл. 2).
+// Карта: Leaflet.js + тайлы стенда внутри WebView (СВ-4, ЧТЗ табл. 2).
 const CENTER = { lat: 56.4846, lng: 84.9476 }; // Томск
 
-function buildHtml() {
-  const data = mockReports.map((r) => ({ id: r.id, lat: r.lat, lng: r.lng, color: statusColors[r.status] }));
+function buildHtml(reports: Report[]) {
+  const data = reports
+    .filter((r) => r.lat !== null && r.lng !== null)
+    .map((r) => ({ id: r.id, lat: r.lat, lng: r.lng, color: statusColors[r.status] }));
   return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
@@ -20,7 +24,7 @@ function buildHtml() {
 var reports = ${JSON.stringify(data)};
 var map = L.map('map').setView([${CENTER.lat}, ${CENTER.lng}], 13);
 map.attributionControl.setPrefix(false);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+L.tileLayer(${JSON.stringify(TILE_URL)}, {
   maxZoom: 19, attribution: '&copy; OpenStreetMap'
 }).addTo(map);
 reports.forEach(function (r) {
@@ -35,7 +39,31 @@ export default function MapScreen() {
   const nav = useNavigation<any>();
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const html = useMemo(buildHtml, []);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setLoading(true);
+    listAllMyRequests()
+      .then((items) => {
+        if (active) {
+          setReports(items);
+          setError(null);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (active) setError(errorMessage(cause));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []));
+
+  const html = useMemo(() => buildHtml(reports), [reports]);
 
   return (
     <View style={styles.flex}>
@@ -56,6 +84,11 @@ export default function MapScreen() {
           <Text style={styles.msg}>Карта недоступна. Проверьте интернет. Заявки можно открыть в разделе «Мои заявки».</Text>
         </View>
       )}
+      {!loading && error && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -64,4 +97,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white, padding: 24 },
   msg: { textAlign: 'center', fontSize: fontSize.sm, color: colors.text },
+  errorBanner: { position: 'absolute', left: 12, right: 12, bottom: 16, padding: 12, backgroundColor: 'rgba(255,255,255,0.94)', borderRadius: 8 },
+  errorText: { textAlign: 'center', fontSize: fontSize.xs + 1, color: colors.primary },
 });

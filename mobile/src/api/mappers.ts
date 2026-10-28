@@ -10,6 +10,24 @@ type Raw = Record<string, any>;
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
+const statusLabels: Record<StatusCode, Report['status']> = {
+  on_review: 'На проверке',
+  accepted: 'Принято',
+  rejected: 'Отклонено',
+  needs_clarification: 'Требует уточнения',
+  in_progress: 'В работе',
+  done: 'Выполнено',
+};
+
+function toStatus(code: unknown, label: unknown): Report['status'] {
+  if (typeof label === 'string' && Object.values(statusLabels).includes(label as Report['status'])) {
+    return label as Report['status'];
+  }
+  return typeof code === 'string' && code in statusLabels
+    ? statusLabels[code as StatusCode]
+    : 'На проверке';
+}
+
 function toEvent(e: Raw): StatusEvent {
   return {
     at: str(e.at) ?? str(e.created_at) ?? '',
@@ -21,19 +39,21 @@ export function toReport(raw: Raw): Report {
   const status = raw.status ?? {};
   const loc = raw.location ?? {};
   const history = Array.isArray(raw.history) ? raw.history : Array.isArray(raw.events) ? raw.events : [];
+  const defectClass = str(raw.defect_class) ?? str(raw.class) ?? str(raw.manual_class);
   return {
     id: Number(raw.id ?? raw.number),
-    address: str(raw.address) ?? '',
-    status: {
-      code: (str(status.code) ?? 'on_review') as StatusCode,
-      label: str(status.label) ?? '',
-    },
-    createdAt: str(raw.created_at) ?? '',
-    defectClass: str(raw.defect_class) ?? str(raw.class) ?? str(raw.manual_class) ?? null,
+    address: str(raw.address) ?? null,
+    status: toStatus(status.code, status.label),
+    createdAt: str(raw.created_at) ?? str(raw.detected_at) ?? null,
+    defectClass: defectClass === 'big' ? 'Большая' : defectClass === 'small' ? 'Маленькая' : null,
     lat: num(loc.lat ?? raw.lat),
     lng: num(loc.lon ?? loc.lng ?? raw.lon ?? raw.lng),
     comment: str(raw.citizen_comment),
-    history: history.map(toEvent),
+    history: history.map((e: Raw) => toEvent({
+      ...e,
+      at: e.created_at ?? e.at,
+      text: e.text ?? e.message ?? e.status?.label,
+    })),
     photoBeforeUrl: str(raw.photo_before_url),
     photoAfterUrl: str(raw.photo_after_url),
   };

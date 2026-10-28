@@ -1,10 +1,12 @@
 import React from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AppHeader } from '../components/AppHeader';
 import { TabBar } from '../components/TabBar';
 import { useAuth } from '../store/AuthContext';
+import { colors } from '../theme';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import MapScreen from '../screens/map/MapScreen';
@@ -29,7 +31,14 @@ function Tabs() {
 }
 
 export default function RootNavigator() {
-  const { isAuthed } = useAuth();
+  const { isAuthed, isReady } = useAuth();
+  if (!isReady) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -49,3 +58,7 @@ export default function RootNavigator() {
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white },
+});

@@ -14,12 +14,14 @@ export interface StatusEvent {
 
 export interface Report {
   id: number;
-  address: string;
+  address: string | null;
   status: ReportStatus;
-  createdAt: string; // ISO, UTC
-  defectClass: 'Большая' | 'Маленькая';
-  lat: number;
-  lng: number;
+  createdAt: string | null; // ISO, UTC
+  defectClass: 'Большая' | 'Маленькая' | null;
+  lat: number | null;
+  lng: number | null;
   comment?: string;
+  photoBeforeUrl?: string;
+  photoAfterUrl?: string;
   history: StatusEvent[];
 }
