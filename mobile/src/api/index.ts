@@ -30,17 +30,19 @@ export async function logout(refreshToken: string): Promise<void> {
 export const getMe = () => request<Record<string, unknown>>('/me');
 
 // --- Фото и заявки ----------------------------------------------------------
-function fileParts(uri: string) {
-  const ext = (uri.split('?')[0].split('.').pop() ?? 'jpg').toLowerCase();
-  const png = ext === 'png';
-  return { name: `photo.${png ? 'png' : 'jpg'}`, type: png ? 'image/png' : 'image/jpeg' };
-}
-
 /** Шаг 1: проверка фото. Возвращает photo_id для шага 2. */
 export function analyzePhoto(uri: string): Promise<AnalyzeResult> {
   const form = new FormData();
-  // В React Native файл в FormData передаётся объектом {uri, name, type}.
-  form.append('image', { uri, ...fileParts(uri) } as unknown as Blob);
+  const filename = uri.split('/').pop() || 'photo.jpg';
+  const match = /\.(\w+)$/.exec(filename);
+  const type = match ? `image/${match[1]}` : 'image/jpeg';
+
+  form.append('image', {
+    uri,
+    name: filename,
+    type,
+  } as unknown as Blob);
+
   return request<AnalyzeResult>('/photos/analyze', { method: 'POST', form, timeoutMs: ANALYZE_TIMEOUT_MS });
 }
 
