@@ -1,8 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, AttributionControl, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Pagination } from '../../components/Pagination';
+import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../../data/mapTiles';
 import { SelectBox } from '../../components/SelectBox';
 import { formatDate, formatDayTime } from '../../utils/format';
 
@@ -279,7 +280,8 @@ export default function PlannedRepairPage() {
                     zoomControl={false}
                     attributionControl={false}
                   >
-                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <TileLayer url={MAP_TILE_URL} attribution={MAP_ATTRIBUTION} />
+                    <AttributionControl prefix={false} position="bottomleft" />
                     <Polyline positions={selectedItem.segmentCoords} pathOptions={{ color: '#D93025', weight: 6, opacity: 0.9 }} />
                     <ZoomButtons />
                   </MapContainer>

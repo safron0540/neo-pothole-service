@@ -185,16 +185,25 @@ jobs:
             echo "requirements.txt not found in ./ml_service. Skipping."
           fi
 
-  # 6. Мобильное приложение
+  # 6. Мобильное приложение: валидация бандла Expo и компиляция APK
   mobile-ci:
-    name: Mobile Android (Lint & Build)
+    name: Mobile Android (Export & APK Build)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: ./mobile
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=512m"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -202,15 +211,31 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Run checks and build
+      - name: Accept Android SDK licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Expo bundle export
+        run: npx expo export --platform android
+
+      - name: Prebuild native Android project
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build Android Debug APK
         run: |
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew lint || true
-            ./gradlew assembleDebug
-          else
-            echo "gradlew not found in ./mobile. Skipping."
-          fi
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pothole-mobile-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
 
   # 7. Сквозные smoke-автотесты (синтаксис и сборка набора)
   smoke-ci:
