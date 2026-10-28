@@ -3,18 +3,19 @@ FastAPI-микросервис для инференса YOLO-классифик
 uvicorn inference.main:app --port 8001
 """
 
-import hashlib
+import io
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
-import numpy as np
 import torch
 from fastapi import FastAPI, HTTPException, UploadFile
-from PIL import Image
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field
 from ultralytics import YOLO
 
-MODEL_PATH = "runs_yolo/YOLO26_s/weights/best.pt"
+# Путь от этого файла: работает и в контейнере (/app/inference/...), и при локальном запуске
+MODEL_PATH = Path(__file__).parent / "runs_yolo" / "YOLO26_s" / "weights" / "best.pt"
 MODEL_VERSION = "yolo26_s_1.0"
 IMGSZ = 512
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -26,11 +27,11 @@ model = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global model
-    model = YOLO(MODEL_PATH)
+    model = YOLO(str(MODEL_PATH))
     yield
 
 
-app = FastAPI(title="ML Service (stub)", version=MODEL_VERSION, lifespan=lifespan)
+app = FastAPI(title="ML Service", version=MODEL_VERSION, lifespan=lifespan)
 
 
 class Prediction(BaseModel):
@@ -46,13 +47,11 @@ class Prediction(BaseModel):
 
 def _predict(img: bytes) -> Prediction:
     """Возвращает название класса: 'no' | 'small' | 'big'."""
-    img = np.array(img)
+    img = Image.open(io.BytesIO(img))
+    img = ImageOps.exif_transpose(img)
+    img = img.convert("RGB")
 
-    if img.dtype != np.uint8:
-        img = img.astype(np.uint8)
-
-    pil_img = Image.fromarray(img, mode="RGB")
-    results = model.predict(source=pil_img, imgsz=IMGSZ, device=DEVICE, verbose=False)
+    results = model.predict(source=img, imgsz=IMGSZ, device=DEVICE, verbose=False)
     top1_idx = int(results[0].probs.top1)
     label = results[0].names[top1_idx]
     confidence = float(results[0].probs.data[top1_idx])
@@ -66,35 +65,17 @@ def _predict(img: bytes) -> Prediction:
     )
 
 
-def predict_bytes(data: bytes, mode: str) -> Prediction:
-    digest = hashlib.sha256(data).digest()
-    if mode == "random":
-        mode = ("no_pit", "small", "big", "big")[digest[0] % 4]
-    if mode == "no_pit":
-        return Prediction(
-            has_pit=False,
-            defect_class=None,
-            pits_count=0,
-            confidence=0.9,
-            model_version=MODEL_VERSION,
-        )
-    return Prediction(
-        has_pit=True,
-        defect_class="small" if mode == "small" else "big",
-        pits_count=1 + digest[1] % 3,
-        confidence=round(0.6 + digest[2] / 255 * 0.39, 2),
-        model_version=MODEL_VERSION,
-    )
-
-
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "model_version": MODEL_VERSION}
 
 
 @app.post("/predict", response_model=Prediction)
-async def predict(image: UploadFile) -> Prediction:
-    data = await image.read()
+def predict(image: UploadFile) -> Prediction:
+    data = image.file.read()
     if not data:
         raise HTTPException(status_code=422, detail="Пустой файл")
-    return _predict(data)
+    try:
+        return _predict(data)
+    except UnidentifiedImageError as error:
+        raise HTTPException(status_code=422, detail="Файл не похож на фото") from error
