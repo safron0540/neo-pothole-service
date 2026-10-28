@@ -676,6 +676,119 @@
         ]
       }
     },
+    "/api/v1/photos/{photo_id}": {
+      "get": {
+        "tags": [
+          "photos"
+        ],
+        "summary": "Фото по подписанной ссылке",
+        "description": "Ссылки приходят в ответах о заявке (photo_before_url, photo_after_url) и живут 15 минут.\nНеверная или устаревшая подпись — 403.",
+        "operationId": "get_photo_api_v1_photos__photo_id__get",
+        "parameters": [
+          {
+            "name": "photo_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Photo Id"
+            }
+          },
+          {
+            "name": "exp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "срок ссылки, Unix-время",
+              "title": "Exp"
+            },
+            "description": "срок ссылки, Unix-время"
+          },
+          {
+            "name": "sig",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "подпись HMAC",
+              "title": "Sig"
+            },
+            "description": "подпись HMAC"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "image/jpeg": {},
+              "image/png": {}
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/requests": {
       "post": {
         "tags": [
@@ -777,7 +890,7 @@
           "dispatcher"
         ],
         "summary": "Список заявок с фильтрами",
-        "description": "sort=priority: класс → дубликаты → группа → дата подачи → плановая дата (REQ-045).\nСлитые заявки не показываются (В-18).",
+        "description": "sort=priority: класс → дубликаты → группа → дата подачи → плановая дата (REQ-045);\nsort=detected_at — сначала новые. Слитые заявки не показываются (В-18).",
         "operationId": "list_requests_api_v1_requests_get",
         "security": [
           {
@@ -1507,7 +1620,7 @@
           "dispatcher"
         ],
         "summary": "Смена статуса: принять, отклонить, уточнить",
-        "description": "409 — заявку уже изменили (version) или переход не разрешён таблицей ЧТЗ.",
+        "description": "409 — заявку уже изменили (version) или переход не разрешён таблицей ЧТЗ.\nПри отклонении нужны comment и reject_reason (422); «Принято» без группы улицы — 409.",
         "operationId": "change_status_api_v1_requests__request_id__status_patch",
         "security": [
           {
@@ -1615,7 +1728,7 @@
           "dispatcher"
         ],
         "summary": "Правка класса ямы",
-        "description": "Только в «На проверке» и «Требует уточнения» (В-5); пересчитывает рекомендацию и срок.",
+        "description": "Только в «На проверке» и «Требует уточнения» (В-5); рекомендация пересчитывается.",
         "operationId": "change_class_api_v1_requests__request_id__class_patch",
         "security": [
           {
@@ -1723,6 +1836,7 @@
           "dispatcher"
         ],
         "summary": "Правка группы улицы",
+        "description": "До решения по заявке (В-3); срок пересчитывается от момента обнаружения.",
         "operationId": "change_street_group_api_v1_requests__request_id__street_group_patch",
         "security": [
           {
@@ -1830,7 +1944,7 @@
           "dispatcher"
         ],
         "summary": "Назначить или сменить подрядчика",
-        "description": "Если заявка «Принято», она сразу переходит в «В работе».",
+        "description": "Если заявка «Принято», она сразу переходит в «В работе». Неактивный подрядчик — 422.",
         "operationId": "assign_contractor_api_v1_requests__request_id__contractor_put",
         "security": [
           {
@@ -1938,6 +2052,7 @@
           "dispatcher"
         ],
         "summary": "Слить дубликат в основную заявку",
+        "description": "Слитая заявка повторяет статус основной и не видна в списке, на карте и в отчётах.",
         "operationId": "merge_request_api_v1_requests__request_id__merge_post",
         "security": [
           {
@@ -2250,6 +2365,7 @@
           "dispatcher"
         ],
         "summary": "Добавить заметку",
+        "description": "Заметку видят только диспетчеры; в истории появляется событие note_added.",
         "operationId": "add_note_api_v1_requests__request_id__notes_post",
         "security": [
           {
@@ -2357,7 +2473,7 @@
           "dispatcher"
         ],
         "summary": "Заявки на карте",
-        "description": "Те же фильтры, что у /requests (отчёт = карта); только видимая область.\nbbox в порядке Leaflet map.getBounds().toBBoxString(): запад,юг,восток,север.",
+        "description": "Те же фильтры, что у /requests (отчёт = карта); только видимая область, до 2000 точек.\nbbox в порядке Leaflet map.getBounds().toBBoxString(): запад,юг,восток,север.",
         "operationId": "map_points_api_v1_map_points_get",
         "security": [
           {
@@ -2528,6 +2644,260 @@
                     "$ref": "#/components/schemas/MapPoint"
                   },
                   "title": "Response Map Points Api V1 Map Points Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/map/heatmap": {
+      "get": {
+        "tags": [
+          "dispatcher"
+        ],
+        "summary": "Тепловая карта по дорогам",
+        "description": "Линии дорог с ямами, цвет — по весу ям на 100 м: low < 2 ≤ medium < 4 ≤ high < 7 ≤\ncritical. Большая яма — 1, маленькая — 0,5. Без status считаются неустранённые ямы\n(на проверке, уточнение, принято, в работе). Фильтры — как у /map/points.",
+        "operationId": "map_heatmap_api_v1_map_heatmap_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bbox",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "запад,юг,восток,север",
+              "examples": [
+                "84.9,56.4,85.1,56.5"
+              ],
+              "title": "Bbox"
+            },
+            "description": "запад,юг,восток,север"
+          },
+          {
+            "name": "zoom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "description": "масштаб Leaflet map.getZoom()",
+              "default": 14,
+              "title": "Zoom"
+            },
+            "description": "масштаб Leaflet map.getZoom()"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "on_review",
+                      "accepted",
+                      "rejected",
+                      "needs_clarification",
+                      "in_progress",
+                      "done"
+                    ],
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "defect_class",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "big",
+                    "small"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Defect Class"
+            }
+          },
+          {
+            "name": "district_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "District Id"
+            }
+          },
+          {
+            "name": "street_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "А",
+                    "Б",
+                    "В",
+                    "Г",
+                    "Д",
+                    "Е"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Street Group"
+            }
+          },
+          {
+            "name": "contractor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Contractor Id"
+            }
+          },
+          {
+            "name": "detected_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected From"
+            }
+          },
+          {
+            "name": "detected_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeatmapOut"
                 }
               }
             }
@@ -2934,7 +3304,7 @@
           "citizen"
         ],
         "summary": "Новые уведомления (опрос)",
-        "description": "Приложение опрашивает раз в 30 с и передаёт since = время последнего полученного.",
+        "description": "Приложение опрашивает раз в 30 с и передаёт since = время последнего полученного.\nБез since — последние 100. Ответ по возрастанию времени.",
         "operationId": "my_notifications_api_v1_me_notifications_get",
         "security": [
           {
@@ -3512,6 +3882,7 @@
           "admin"
         ],
         "summary": "Удалить район",
+        "description": "Район, на который ссылаются улицы или заявки, не удаляется: 409.",
         "operationId": "delete_district_api_v1_districts__district_id__delete",
         "security": [
           {
@@ -4069,7 +4440,7 @@
           "admin"
         ],
         "summary": "Изменить улицу",
-        "description": "Правка не меняет уже поданные заявки: адрес и группа в них — снимок.",
+        "description": "Правка не меняет уже поданные заявки: адрес и группа в них — снимок.\nМеняются только переданные поля; street_group: null снимает группу.",
         "operationId": "update_street_api_v1_streets__street_id__patch",
         "security": [
           {
@@ -4468,6 +4839,7 @@
           "admin"
         ],
         "summary": "Изменить подрядчика",
+        "description": "Меняются только переданные поля; is_active: false — подрядчику больше не назначают.",
         "operationId": "update_contractor_api_v1_contractors__contractor_id__patch",
         "security": [
           {
@@ -4810,6 +5182,7 @@
           "admin"
         ],
         "summary": "Добавить сотрудника",
+        "description": "Только диспетчер или подрядчик; подрядчику обязателен contractor_id. 409 — логин занят.",
         "operationId": "create_user_api_v1_users_post",
         "security": [
           {
@@ -5014,6 +5387,7 @@
           "admin"
         ],
         "summary": "Новый пароль сотрудника",
+        "description": "Старые сессии сотрудника отзываются.",
         "operationId": "reset_password_api_v1_users__user_id__reset_password_post",
         "security": [
           {
@@ -5107,6 +5481,1150 @@
           }
         }
       }
+    },
+    "/api/v1/reports/count": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Отчёт: количество заявок",
+        "description": "Строки по районам, подрядчикам или группам улиц: всего, по статусам, выполнено,\nв срок, просрочено. Слитые дубликаты не считаются (В-18).",
+        "operationId": "count_report_api_v1_reports_count_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "district",
+                "contractor",
+                "street_group"
+              ],
+              "type": "string",
+              "default": "district",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "on_review",
+                      "accepted",
+                      "rejected",
+                      "needs_clarification",
+                      "in_progress",
+                      "done"
+                    ],
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "district_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "District Id"
+            }
+          },
+          {
+            "name": "street_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "А",
+                    "Б",
+                    "В",
+                    "Г",
+                    "Д",
+                    "Е"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Street Group"
+            }
+          },
+          {
+            "name": "defect_class",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "big",
+                    "small"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Defect Class"
+            }
+          },
+          {
+            "name": "contractor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Contractor Id"
+            }
+          },
+          {
+            "name": "detected_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected From"
+            }
+          },
+          {
+            "name": "detected_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CountReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/avg-time": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Отчёт: среднее время выполнения",
+        "description": "По выполненным заявкам: среднее, минимум и максимум часов от обнаружения до\nвыполнения, доля выполненных в срок.",
+        "operationId": "avg_time_report_api_v1_reports_avg_time_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "district",
+                "contractor",
+                "street_group"
+              ],
+              "type": "string",
+              "default": "district",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "district_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "District Id"
+            }
+          },
+          {
+            "name": "street_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "А",
+                    "Б",
+                    "В",
+                    "Г",
+                    "Д",
+                    "Е"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Street Group"
+            }
+          },
+          {
+            "name": "defect_class",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "big",
+                    "small"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Defect Class"
+            }
+          },
+          {
+            "name": "contractor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Contractor Id"
+            }
+          },
+          {
+            "name": "detected_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected From"
+            }
+          },
+          {
+            "name": "detected_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvgTimeReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contractors/rating": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Рейтинг подрядчиков",
+        "description": "По доле выполненных в срок (completed_at ≤ planned_due_at [D]), затем по числу\nвыполненных. Срок — от обнаружения (В-17 а); avg_work_hours — от «В работе» (В-17 б).",
+        "operationId": "contractor_rating_api_v1_contractors_rating_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "district_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "District Id"
+            }
+          },
+          {
+            "name": "street_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "А",
+                    "Б",
+                    "В",
+                    "Г",
+                    "Д",
+                    "Е"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Street Group"
+            }
+          },
+          {
+            "name": "defect_class",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "big",
+                    "small"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Defect Class"
+            }
+          },
+          {
+            "name": "detected_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected From"
+            }
+          },
+          {
+            "name": "detected_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detected To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RatingRow"
+                  },
+                  "title": "Response Contractor Rating Api V1 Contractors Rating Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contractors/{contractor_id}/history": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "История заявок подрядчика",
+        "description": "Все заявки подрядчика, сначала новые: срок, дата выполнения, в срок или нет.",
+        "operationId": "contractor_history_api_v1_contractors__contractor_id__history_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contractor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Contractor Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_HistoryRow_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/planned-repairs": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Предложения планового ремонта",
+        "description": "По умолчанию только открытые. Предложение открывается, когда отклонённых малых ям\nна участке 100 м больше порога группы улицы, и закрывается само, когда их не больше.\nРешение диспетчера — POST /planned-repairs/{id}/decision [D] (В-16).",
+        "operationId": "list_planned_repairs_api_v1_planned_repairs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "open",
+                    "closed",
+                    "planned",
+                    "declined",
+                    "done"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "open",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "district_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "District Id"
+            }
+          },
+          {
+            "name": "street_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "А",
+                    "Б",
+                    "В",
+                    "Г",
+                    "Д",
+                    "Е"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Street Group"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PlannedRepairOut_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/planned-repairs/{proposal_id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Предложение и его заявки",
+        "operationId": "get_planned_repair_api_v1_planned_repairs__proposal_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannedRepairDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/planned-repairs/{proposal_id}/decision": {
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Решение по предложению",
+        "description": "«Включить в план» (plan), «Оставить точечный ремонт» (spot), «Ремонт выполнен» (done).\nПосле spot и done ямы участка считаются заново с момента решения [D] (В-16).",
+        "operationId": "decide_planned_repair_api_v1_planned_repairs__proposal_id__decision_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannedRepairDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет токена или он недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Роль не подходит",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено (чужая заявка тоже 404)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт: version, недопустимый переход, занятое значение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка в данных запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Ещё не реализовано",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5133,6 +6651,104 @@
           "phone"
         ],
         "title": "Applicant"
+      },
+      "AvgTimeReport": {
+        "properties": {
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "district",
+              "contractor",
+              "street_group"
+            ],
+            "title": "Group By"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AvgTimeRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_by",
+          "rows",
+          "generated_at"
+        ],
+        "title": "AvgTimeReport"
+      },
+      "AvgTimeRow": {
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/ReportKey"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "avg_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Hours",
+            "description": "от обнаружения до выполнения (REQ-068)"
+          },
+          "min_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Hours"
+          },
+          "max_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Hours"
+          },
+          "on_time_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Time Share",
+            "description": "доля выполненных в срок, 0…1"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "done",
+          "avg_hours",
+          "min_hours",
+          "max_hours",
+          "on_time_share"
+        ],
+        "title": "AvgTimeRow"
       },
       "Body_analyze_photo_api_v1_photos_analyze_post": {
         "properties": {
@@ -5639,6 +7255,125 @@
         },
         "type": "object",
         "title": "ContractorUpdate"
+      },
+      "CountReport": {
+        "properties": {
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "district",
+              "contractor",
+              "street_group"
+            ],
+            "title": "Group By"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CountRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_by",
+          "rows",
+          "total",
+          "generated_at"
+        ],
+        "title": "CountReport"
+      },
+      "CountRow": {
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/ReportKey"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "enum": [
+                "on_review",
+                "accepted",
+                "rejected",
+                "needs_clarification",
+                "in_progress",
+                "done"
+              ]
+            },
+            "type": "object",
+            "title": "By Status"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "done_on_time": {
+            "type": "integer",
+            "title": "Done On Time",
+            "description": "выполнено не позже плановой даты [D]"
+          },
+          "overdue": {
+            "type": "integer",
+            "title": "Overdue",
+            "description": "сейчас в работе и срок прошёл"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "total",
+          "by_status",
+          "done",
+          "done_on_time",
+          "overdue"
+        ],
+        "title": "CountRow"
+      },
+      "DecisionIn": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "plan",
+              "spot",
+              "done"
+            ],
+            "title": "Decision",
+            "description": "plan и spot — из open; done — из planned. Иначе 409 invalid_transition"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "DecisionIn"
       },
       "DeviceTokenIn": {
         "properties": {
@@ -6301,6 +8036,238 @@
         ],
         "title": "HealthResponse"
       },
+      "HeatFeature": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Feature",
+            "title": "Type",
+            "default": "Feature"
+          },
+          "geometry": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Geometry",
+            "description": "GeoJSON LineString или MultiLineString, [долгота, широта]"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/HeatProperties"
+          }
+        },
+        "type": "object",
+        "required": [
+          "geometry",
+          "properties"
+        ],
+        "title": "HeatFeature"
+      },
+      "HeatProperties": {
+        "properties": {
+          "street": {
+            "type": "string",
+            "title": "Street"
+          },
+          "street_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Street Id",
+            "description": "пусто, если улица собрана из нескольких кусков"
+          },
+          "segment_idx": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Idx",
+            "description": "номер участка 100 м; только на детальном уровне"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "заявок (ям) на этом отрезке"
+          },
+          "weight": {
+            "type": "number",
+            "title": "Weight",
+            "description": "большая яма — 1, маленькая — 0,5"
+          },
+          "per_100m": {
+            "type": "number",
+            "title": "Per 100M",
+            "description": "вес на 100 м дороги: по нему выбирается цвет"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Level"
+          }
+        },
+        "type": "object",
+        "required": [
+          "street",
+          "street_id",
+          "segment_idx",
+          "count",
+          "weight",
+          "per_100m",
+          "level"
+        ],
+        "title": "HeatProperties"
+      },
+      "HeatmapOut": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "FeatureCollection",
+            "title": "Type",
+            "default": "FeatureCollection"
+          },
+          "detail": {
+            "type": "string",
+            "enum": [
+              "street",
+              "piece",
+              "segment"
+            ],
+            "title": "Detail",
+            "description": "улица целиком (zoom ≤ 12), кусок улицы (13–15), участок 100 м (≥ 16)"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/HeatFeature"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "outside_streets": {
+            "type": "integer",
+            "title": "Outside Streets",
+            "description": "заявок в окне без улицы в 30 м: их видно только маркерами"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "features",
+          "outside_streets"
+        ],
+        "title": "HeatmapOut",
+        "description": "Тепловая карта по дорогам (REQ-052): GeoJSON для L.geoJSON(...)."
+      },
+      "HistoryRow": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StatusOut"
+          },
+          "defect_class": {
+            "type": "string",
+            "enum": [
+              "big",
+              "small"
+            ],
+            "title": "Defect Class"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "detected_at": {
+            "type": "string",
+            "title": "Detected At"
+          },
+          "planned_due_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Due At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "on_time": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Time",
+            "description": "пусто, пока не выполнена"
+          },
+          "hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hours",
+            "description": "от обнаружения до выполнения"
+          },
+          "is_overdue": {
+            "type": "boolean",
+            "title": "Is Overdue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "defect_class",
+          "address",
+          "detected_at",
+          "planned_due_at",
+          "completed_at",
+          "on_time",
+          "hours",
+          "is_overdue"
+        ],
+        "title": "HistoryRow",
+        "description": "Заявка в истории подрядчика (REQ-065)."
+      },
       "LoginRequest": {
         "properties": {
           "login": {
@@ -6328,7 +8295,8 @@
           },
           "lat": {
             "type": "number",
-            "title": "Lat"
+            "title": "Lat",
+            "description": "точка на дороге: ближайшая к GPS точка найденной улицы"
           },
           "lon": {
             "type": "number",
@@ -6651,6 +8619,68 @@
         ],
         "title": "Page[DispatcherRequestSummary]"
       },
+      "Page_HistoryRow_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryRow"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[HistoryRow]"
+      },
+      "Page_PlannedRepairOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedRepairOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[PlannedRepairOut]"
+      },
       "Page_RequestSummary_": {
         "properties": {
           "items": {
@@ -6819,6 +8849,261 @@
         "title": "PhotoAnalysis",
         "description": "Ответ POST /photos/analyze. Если ямы нет — 422 с кодом no_pit_detected."
       },
+      "PlannedRepairDetail": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "street": {
+            "$ref": "#/components/schemas/Ref"
+          },
+          "district": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "street_group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "А",
+                  "Б",
+                  "В",
+                  "Г",
+                  "Д",
+                  "Е"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Street Group",
+            "description": "текущая группа улицы (В-14)"
+          },
+          "segment_idx": {
+            "type": "integer",
+            "title": "Segment Idx",
+            "description": "номер участка 100 м от начала линии улицы"
+          },
+          "segment": {
+            "$ref": "#/components/schemas/GeoLineString",
+            "description": "сам участок для карты, [долгота, широта]"
+          },
+          "center": {
+            "$ref": "#/components/schemas/Point"
+          },
+          "pits_count": {
+            "type": "integer",
+            "title": "Pits Count",
+            "description": "отклонённых малых ям с причиной small_pit (В-15)"
+          },
+          "threshold": {
+            "type": "integer",
+            "title": "Threshold",
+            "description": "порог группы: открыто, если ям больше порога"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "planned",
+              "declined",
+              "done"
+            ],
+            "title": "Status"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At",
+            "description": "когда диспетчер принял решение"
+          },
+          "decision_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Comment"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/RequestSummary"
+            },
+            "type": "array",
+            "title": "Requests",
+            "description": "заявки, из которых сложилось предложение"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "street",
+          "district",
+          "street_group",
+          "segment_idx",
+          "segment",
+          "center",
+          "pits_count",
+          "threshold",
+          "status",
+          "decided_at",
+          "decision_comment",
+          "created_at",
+          "updated_at",
+          "requests"
+        ],
+        "title": "PlannedRepairDetail"
+      },
+      "PlannedRepairOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "street": {
+            "$ref": "#/components/schemas/Ref"
+          },
+          "district": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "street_group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "А",
+                  "Б",
+                  "В",
+                  "Г",
+                  "Д",
+                  "Е"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Street Group",
+            "description": "текущая группа улицы (В-14)"
+          },
+          "segment_idx": {
+            "type": "integer",
+            "title": "Segment Idx",
+            "description": "номер участка 100 м от начала линии улицы"
+          },
+          "segment": {
+            "$ref": "#/components/schemas/GeoLineString",
+            "description": "сам участок для карты, [долгота, широта]"
+          },
+          "center": {
+            "$ref": "#/components/schemas/Point"
+          },
+          "pits_count": {
+            "type": "integer",
+            "title": "Pits Count",
+            "description": "отклонённых малых ям с причиной small_pit (В-15)"
+          },
+          "threshold": {
+            "type": "integer",
+            "title": "Threshold",
+            "description": "порог группы: открыто, если ям больше порога"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "planned",
+              "declined",
+              "done"
+            ],
+            "title": "Status"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At",
+            "description": "когда диспетчер принял решение"
+          },
+          "decision_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Comment"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "street",
+          "district",
+          "street_group",
+          "segment_idx",
+          "segment",
+          "center",
+          "pits_count",
+          "threshold",
+          "status",
+          "decided_at",
+          "decision_comment",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PlannedRepairOut"
+      },
       "Point": {
         "properties": {
           "lat": {
@@ -6840,6 +9125,89 @@
           "lon"
         ],
         "title": "Point"
+      },
+      "RatingRow": {
+        "properties": {
+          "place": {
+            "type": "integer",
+            "title": "Place"
+          },
+          "contractor": {
+            "$ref": "#/components/schemas/Ref"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "done_on_time": {
+            "type": "integer",
+            "title": "Done On Time"
+          },
+          "on_time_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Time Share",
+            "description": "доля выполненных в срок, 0…1"
+          },
+          "in_progress": {
+            "type": "integer",
+            "title": "In Progress"
+          },
+          "overdue_now": {
+            "type": "integer",
+            "title": "Overdue Now",
+            "description": "сейчас в работе и срок прошёл"
+          },
+          "avg_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Hours",
+            "description": "от обнаружения до выполнения"
+          },
+          "avg_work_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Work Hours",
+            "description": "от «В работе» до выполнения (В-17 б)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "place",
+          "contractor",
+          "is_active",
+          "done",
+          "done_on_time",
+          "on_time_share",
+          "in_progress",
+          "overdue_now",
+          "avg_hours",
+          "avg_work_hours"
+        ],
+        "title": "RatingRow",
+        "description": "Строка рейтинга подрядчика (REQ-066). Срок считается от обнаружения (В-17 а)."
       },
       "Ref": {
         "properties": {
@@ -6872,6 +9240,33 @@
           "refresh_token"
         ],
         "title": "RefreshRequest"
+      },
+      "ReportKey": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "id района или подрядчика; у группы улиц пусто"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ReportKey",
+        "description": "Строка разреза: район, подрядчик или группа улиц. Без значения — «Не указан»."
       },
       "RequestCreate": {
         "properties": {
@@ -7570,6 +9965,10 @@
     {
       "name": "admin",
       "description": "Справочники и сотрудники (диспетчер)"
+    },
+    {
+      "name": "reports",
+      "description": "Отчёты, плановый ремонт, рейтинг (диспетчер)"
     }
   ]
 }

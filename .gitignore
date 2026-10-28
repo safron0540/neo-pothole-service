@@ -81,3 +81,8 @@ backups/
 
 
 !frontend/src/data/
+# Ключи (Firebase и т. п.): только на сервере
+/secrets/
+
+# Резервные копии базы и фото (backend/scripts/backup.sh)
+/backups/

@@ -8,9 +8,10 @@
 
 from datetime import UTC, datetime, timedelta, timezone
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app import __version__
+from app import __version__, errors
 from app.main import app
 from app.modules.notifications.schemas import NotificationOut
 from app.schemas import StatusOut, to_utc_z
@@ -68,7 +69,14 @@ MVP = {
     ("patch", "/users/{user_id}"),
     ("post", "/users/{user_id}/reset-password"),
 }
-PUBLIC = {"/health", "/auth/citizen/register", "/auth/citizen/login", "/auth/staff/login"}
+# Фото по подписанной ссылке: подпись заменяет токен
+PUBLIC = {
+    "/health",
+    "/auth/citizen/register",
+    "/auth/citizen/login",
+    "/auth/staff/login",
+    "/photos/{photo_id}",
+}
 
 
 def operations():
@@ -127,11 +135,11 @@ def test_error_format_validation_hides_input():
 
 
 def test_error_format_not_implemented_stub():
-    assert_error(
-        client.post("/api/v1/auth/citizen/login", json={"login": "x", "password": "y"}),
-        501,
-        "not_implemented",
-    )
+    # Все запросы MVP сделаны; заглушку для будущих проверяем на отдельном приложении
+    stub = FastAPI()
+    errors.install(stub)
+    stub.get("/later", response_model=None)(errors.not_implemented)
+    assert_error(TestClient(stub).get("/later"), 501, "not_implemented")
 
 
 def test_error_schema_documented_instead_of_default_422():

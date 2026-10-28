@@ -26,7 +26,9 @@ class PlannedRepairProposal(Base):
     __table_args__ = (
         UniqueConstraint("street_id", "segment_idx"),
         CheckConstraint("segment_idx >= 0", name="segment_idx_not_negative"),
-        CheckConstraint("status IN ('open', 'closed')", name="status"),
+        CheckConstraint(
+            "status IN ('open', 'closed', 'planned', 'declined', 'done')", name="status"
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
@@ -36,6 +38,14 @@ class PlannedRepairProposal(Base):
     segment_idx: Mapped[int] = mapped_column(Integer)
     pits_count: Mapped[int] = mapped_column(Integer)  # снимок последнего пересчёта
     threshold: Mapped[int] = mapped_column(Integer)  # порог группы на момент пересчёта
-    status: Mapped[str] = mapped_column(String(6))
+    # open/closed ставит пересчёт; planned, declined, done — решение диспетчера (В-16)
+    status: Mapped[str] = mapped_column(String(8))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    decision_comment: Mapped[str | None] = mapped_column(String(1000))
+    # После declined и done ямы участка считаются заново: только поданные позже этого
+    counted_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

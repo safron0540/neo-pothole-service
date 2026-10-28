@@ -1,12 +1,13 @@
-"""Справочники и сотрудники (диспетчер). Реализация — PR 4-2, 4-3, 4-4.
+"""Справочники и сотрудники (диспетчер).
 
 Справочник, на который ссылаются заявки, не удаляется: 409 (UC-12 А2).
 """
 
 from fastapi import APIRouter, status
 
-from app.deps import Paging, Token
-from app.errors import ERROR_RESPONSES, not_implemented
+from app.deps import DbSession, DispatcherUser, Paging
+from app.errors import ERROR_RESPONSES
+from app.modules.admin import service
 from app.modules.admin.schemas import (
     ContractorIn,
     ContractorOut,
@@ -32,8 +33,8 @@ router = APIRouter(tags=["admin"], responses=ERROR_RESPONSES)
 
 
 @router.get("/districts", response_model=list[DistrictOut], summary="Районы")
-def list_districts(token: Token) -> list[DistrictOut]:
-    not_implemented()
+def list_districts(user: DispatcherUser, session: DbSession) -> list[DistrictOut]:
+    return service.list_districts(session)
 
 
 @router.post(
@@ -42,36 +43,41 @@ def list_districts(token: Token) -> list[DistrictOut]:
     status_code=status.HTTP_201_CREATED,
     summary="Добавить район",
 )
-def create_district(body: DistrictIn, token: Token) -> DistrictOut:
-    not_implemented()
+def create_district(body: DistrictIn, user: DispatcherUser, session: DbSession) -> DistrictOut:
+    return service.create_district(session, body.name)
 
 
 @router.patch("/districts/{district_id}", response_model=DistrictOut, summary="Переименовать район")
-def update_district(district_id: int, body: DistrictIn, token: Token) -> DistrictOut:
-    not_implemented()
+def update_district(
+    district_id: int, body: DistrictIn, user: DispatcherUser, session: DbSession
+) -> DistrictOut:
+    return service.update_district(session, district_id, body.name)
 
 
 @router.delete(
     "/districts/{district_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить район"
 )
-def delete_district(district_id: int, token: Token) -> None:
-    not_implemented()
+def delete_district(district_id: int, user: DispatcherUser, session: DbSession) -> None:
+    """Район, на который ссылаются улицы или заявки, не удаляется: 409."""
+    service.delete_district(session, district_id)
 
 
 # --- Группы улиц ----------------------------------------------------------------------
 
 
 @router.get("/street-groups", response_model=list[StreetGroupOut], summary="Группы улиц А–Е")
-def list_street_groups(token: Token) -> list[StreetGroupOut]:
-    not_implemented()
+def list_street_groups(user: DispatcherUser, session: DbSession) -> list[StreetGroupOut]:
+    return service.list_street_groups(session)
 
 
 @router.put(
     "/street-groups/{code}", response_model=StreetGroupOut, summary="Срок и порог группы улиц"
 )
-def update_street_group(code: StreetGroup, body: StreetGroupUpdate, token: Token) -> StreetGroupOut:
+def update_street_group(
+    code: StreetGroup, body: StreetGroupUpdate, user: DispatcherUser, session: DbSession
+) -> StreetGroupOut:
     """Новый срок действует для новых заявок; рассчитанные сроки не меняются (REQ-074)."""
-    not_implemented()
+    return service.update_street_group(session, code, body)
 
 
 # --- Улицы ----------------------------------------------------------------------------
@@ -79,13 +85,14 @@ def update_street_group(code: StreetGroup, body: StreetGroupUpdate, token: Token
 
 @router.get("/streets", response_model=Page[StreetOut], summary="Улицы")
 def list_streets(
-    token: Token,
+    user: DispatcherUser,
+    session: DbSession,
     paging: Paging,
     q: str | None = None,
     district_id: int | None = None,
     street_group: StreetGroup | None = None,
 ) -> Page[StreetOut]:
-    not_implemented()
+    return service.list_streets(session, paging, q, district_id, street_group)
 
 
 @router.post(
@@ -94,29 +101,34 @@ def list_streets(
     status_code=status.HTTP_201_CREATED,
     summary="Добавить улицу",
 )
-def create_street(body: StreetIn, token: Token) -> StreetOut:
-    not_implemented()
+def create_street(body: StreetIn, user: DispatcherUser, session: DbSession) -> StreetOut:
+    return service.create_street(session, body)
 
 
 @router.patch("/streets/{street_id}", response_model=StreetOut, summary="Изменить улицу")
-def update_street(street_id: int, body: StreetUpdate, token: Token) -> StreetOut:
-    """Правка не меняет уже поданные заявки: адрес и группа в них — снимок."""
-    not_implemented()
+def update_street(
+    street_id: int, body: StreetUpdate, user: DispatcherUser, session: DbSession
+) -> StreetOut:
+    """Правка не меняет уже поданные заявки: адрес и группа в них — снимок.
+    Меняются только переданные поля; street_group: null снимает группу."""
+    return service.update_street(session, street_id, body)
 
 
 @router.delete(
     "/streets/{street_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить улицу"
 )
-def delete_street(street_id: int, token: Token) -> None:
-    not_implemented()
+def delete_street(street_id: int, user: DispatcherUser, session: DbSession) -> None:
+    service.delete_street(session, street_id)
 
 
 # --- Подрядчики -----------------------------------------------------------------------
 
 
 @router.get("/contractors", response_model=list[ContractorOut], summary="Подрядчики")
-def list_contractors(token: Token, is_active: bool | None = None) -> list[ContractorOut]:
-    not_implemented()
+def list_contractors(
+    user: DispatcherUser, session: DbSession, is_active: bool | None = None
+) -> list[ContractorOut]:
+    return service.list_contractors(session, is_active)
 
 
 @router.post(
@@ -125,16 +137,21 @@ def list_contractors(token: Token, is_active: bool | None = None) -> list[Contra
     status_code=status.HTTP_201_CREATED,
     summary="Добавить подрядчика",
 )
-def create_contractor(body: ContractorIn, token: Token) -> ContractorOut:
+def create_contractor(
+    body: ContractorIn, user: DispatcherUser, session: DbSession
+) -> ContractorOut:
     """422 — зона некорректна или пересекается с чужой."""
-    not_implemented()
+    return service.create_contractor(session, body)
 
 
 @router.patch(
     "/contractors/{contractor_id}", response_model=ContractorOut, summary="Изменить подрядчика"
 )
-def update_contractor(contractor_id: int, body: ContractorUpdate, token: Token) -> ContractorOut:
-    not_implemented()
+def update_contractor(
+    contractor_id: int, body: ContractorUpdate, user: DispatcherUser, session: DbSession
+) -> ContractorOut:
+    """Меняются только переданные поля; is_active: false — подрядчику больше не назначают."""
+    return service.update_contractor(session, contractor_id, body)
 
 
 @router.delete(
@@ -142,9 +159,9 @@ def update_contractor(contractor_id: int, body: ContractorUpdate, token: Token) 
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить подрядчика",
 )
-def delete_contractor(contractor_id: int, token: Token) -> None:
+def delete_contractor(contractor_id: int, user: DispatcherUser, session: DbSession) -> None:
     """Если на подрядчика ссылаются заявки — 409, предлагается сделать его неактивным."""
-    not_implemented()
+    service.delete_contractor(session, contractor_id)
 
 
 # --- Сотрудники -----------------------------------------------------------------------
@@ -152,9 +169,13 @@ def delete_contractor(contractor_id: int, token: Token) -> None:
 
 @router.get("/users", response_model=Page[UserOut], summary="Пользователи")
 def list_users(
-    token: Token, paging: Paging, role: Role | None = None, is_active: bool | None = None
+    user: DispatcherUser,
+    session: DbSession,
+    paging: Paging,
+    role: Role | None = None,
+    is_active: bool | None = None,
 ) -> Page[UserOut]:
-    not_implemented()
+    return service.list_users(session, paging, role, is_active)
 
 
 @router.post(
@@ -163,14 +184,17 @@ def list_users(
     status_code=status.HTTP_201_CREATED,
     summary="Добавить сотрудника",
 )
-def create_user(body: UserCreate, token: Token) -> UserOut:
-    not_implemented()
+def create_user(body: UserCreate, user: DispatcherUser, session: DbSession) -> UserOut:
+    """Только диспетчер или подрядчик; подрядчику обязателен contractor_id. 409 — логин занят."""
+    return service.create_user(session, body)
 
 
 @router.patch("/users/{user_id}", response_model=UserOut, summary="Изменить или отключить")
-def update_user(user_id: int, body: UserUpdate, token: Token) -> UserOut:
+def update_user(
+    user_id: int, body: UserUpdate, user: DispatcherUser, session: DbSession
+) -> UserOut:
     """При отключении отзываются все refresh-токены пользователя."""
-    not_implemented()
+    return service.update_user(session, user_id, body)
 
 
 @router.post(
@@ -178,5 +202,8 @@ def update_user(user_id: int, body: UserUpdate, token: Token) -> UserOut:
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Новый пароль сотрудника",
 )
-def reset_password(user_id: int, body: PasswordReset, token: Token) -> None:
-    not_implemented()
+def reset_password(
+    user_id: int, body: PasswordReset, user: DispatcherUser, session: DbSession
+) -> None:
+    """Старые сессии сотрудника отзываются."""
+    service.reset_password(session, user_id, body.password)

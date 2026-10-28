@@ -31,11 +31,35 @@ services:
       # Внутри сети compose база доступна по имени сервиса db
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-potholes}
       ML_URL: http://ml_service:8001
+      # Без ENVIRONMENT в .env считаем стенд боевым: с JWT_SECRET из примера API не запустится
+      ENVIRONMENT: ${ENVIRONMENT:-prod}
+      # Фото через nginx; при прямом обращении к :8000 тело фото будет пустым
+      PHOTO_ACCEL_PREFIX: /_photos/
     depends_on:
       db:
         condition: service_healthy
+    # Фото «до» и «после» переживают пересборку контейнера (PHOTOS_DIR)
+    volumes:
+      - photos:/data/photos
+      # Ключ Firebase для push (FCM_CREDENTIALS_FILE); папки нет — push выключен
+      - ./secrets:/run/secrets:ro
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+
+  # Вход для пользователей: веб-панель и /api. Порт 80 хоста у Caddy, он проксирует сюда
+  nginx:
+    build:
+      context: ./frontend
+      dockerfile: ../infra/nginx/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Фото отдаёт nginx по X-Accel-Redirect после проверки подписи в API
+      - photos:/data/photos:ro
+    ports:
+      - "127.0.0.1:${NGINX_PORT:-8080}:80"
 
   # Пока заглушка (ML_STUB_MODE в .env); настоящую модель ведёт ML-разработчик
   ml_service:
@@ -46,5 +70,39 @@ services:
     ports:
       - "127.0.0.1:${ML_PORT:-8001}:8001"
 
+  # Мониторинг (СВ-8): docker compose --profile monitoring up -d. Отдельный профиль —
+  # на сервере мало места, а основному стеку Prometheus и Grafana не нужны
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: [monitoring]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    profiles: [monitoring]
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+
 volumes:
   pgdata:
+  photos:
+  prometheus:
+  grafana:
