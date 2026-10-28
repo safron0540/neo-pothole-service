@@ -3,30 +3,21 @@ FastAPI-микросервис для инференса YOLO-классифик
 uvicorn inference.main:app --port 8001
 """
 
-import asyncio
-import hashlib
-import os
-from typing import Literal
-
-from fastapi import FastAPI, HTTPException, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
-
-import io
-import logging
-import os
 from contextlib import asynccontextmanager
-
+from fastapi import FastAPI, HTTPException, UploadFile
+import hashlib
 import numpy as np
-import torch
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import PlainTextResponse
 from PIL import Image
+from pydantic import BaseModel, ConfigDict, Field
+import torch
+from typing import Literal
 from ultralytics import YOLO
 
 MODEL_PATH = "runs_yolo/YOLO26_s/weights/best.pt"
 MODEL_VERSION = "yolo26_s_1.0"
 IMGSZ      = 512
-DEVICE     = "cuda" if torch.cuda.is_available() else 'cpu' # будет всегда cpu, т.к. для облегчения установки зависимостей выбран torch без cuda
+DEVICE     = "cuda" if torch.cuda.is_available() else 'cpu'
+# будет всегда cpu, т.к. для облегчения установки зависимостей выбран torch без cuda
 model = None
 
 # Загрузка модели при старте
