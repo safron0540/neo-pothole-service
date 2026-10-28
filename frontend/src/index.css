@@ -39,6 +39,25 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Одна система текста на всех страницах (шкала кеглей — tailwind.config.js):
+   page-title — заголовок страницы, page-subtitle — строка под ним,
+   block-title — заголовок блока, карточки и пустого состояния,
+   section-label — подписи разделов и шапки таблиц заглавными */
+@layer components {
+  .page-title {
+    @apply text-2xl font-bold leading-tight text-neutral-800;
+  }
+  .page-subtitle {
+    @apply mt-1 text-sm font-normal text-neutral-600;
+  }
+  .block-title {
+    @apply text-base font-bold leading-6 text-neutral-800;
+  }
+  .section-label {
+    @apply text-xs font-bold uppercase tracking-[0.5px] text-neutral-600;
+  }
+}
+
 /* Подпись об авторстве карты (требуется лицензией OpenStreetMap): мелкая, полупрозрачная */
 .leaflet-control-attribution {
   font-size: 10px;

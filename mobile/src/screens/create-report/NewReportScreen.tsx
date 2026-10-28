@@ -8,6 +8,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { analyzePhoto, createRequest, errorMessage } from '../../api';
+import type { CreateRequestBody } from '../../api/types';
 import { Button } from '../../components/Button';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { colors, fontSize, radius } from '../../theme';
@@ -17,16 +19,30 @@ interface Photo { uri: string; width: number; height: number }
 // ФТ-2: не ниже 1280×720 (учитываем любую ориентацию снимка).
 const isBigEnough = (p: Photo) => Math.max(p.width, p.height) >= 1280 && Math.min(p.width, p.height) >= 720;
 
+function createRequestId() {
+  let seed = Date.now();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const value = (seed + Math.random() * 16) % 16 | 0;
+    seed = Math.floor(seed / 16);
+    return (char === 'x' ? value : (value & 0x3) | 0x8).toString(16);
+  });
+}
+
 export default function NewReportScreen() {
   const nav = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const cameraRef = useRef<CameraView>(null);
+  const clientRequestId = useRef(createRequestId());
   const [permission, requestPermission] = useCameraPermissions();
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [coords, setCoords] = useState<{ lat: number; lng: number; accuracy: number | null } | null>(null);
   const [geoError, setGeoError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [comment, setComment] = useState('');
+  const [manualClass, setManualClass] = useState<'big' | 'small'>('big');
+  const [detectedClass, setDetectedClass] = useState<string | null>(null);
+  const [analyzedPhotoId, setAnalyzedPhotoId] = useState<string | null>(null);
+  const [modelUnavailable, setModelUnavailable] = useState(false);
 
   // БЗ-4: разрешения запрашиваются при первом использовании — то есть здесь, а не при запуске.
   useEffect(() => {
@@ -61,10 +77,44 @@ export default function NewReportScreen() {
     }
   }
 
-  function submit() {
-    // TODO: 1) загрузить фото на проверку, показать класс; 2) отправить заявку с client_request_id.
-    Alert.alert('Заявка создана (демо)', 'ID заявки: 1046');
-    nav.navigate('Tabs', { screen: 'MyReports' });
+  function retakePhoto() {
+    setPhoto(null);
+    setAnalyzedPhotoId(null);
+    setDetectedClass(null);
+    setModelUnavailable(false);
+    clientRequestId.current = createRequestId();
+  }
+
+  async function submit() {
+    if (!photo || !coords || busy) return;
+    setBusy(true);
+    try {
+      let photoId = analyzedPhotoId;
+      let needsManualClass = modelUnavailable;
+      if (!photoId) {
+        const analysis = await analyzePhoto(photo.uri);
+        photoId = analysis.photo_id;
+        needsManualClass = analysis.model_unavailable;
+        setAnalyzedPhotoId(photoId);
+        setDetectedClass(analysis.defect_class);
+        setModelUnavailable(analysis.model_unavailable);
+      }
+      const body: CreateRequestBody = {
+        client_request_id: clientRequestId.current,
+        photo_id: photoId,
+        location: { lat: coords.lat, lon: coords.lng },
+        accuracy_m: coords.accuracy,
+        citizen_comment: comment.trim() || undefined,
+        manual_class: needsManualClass ? manualClass : undefined,
+      };
+      const request = await createRequest(body);
+      Alert.alert('Заявка отправлена', `Номер заявки: ${request.id}`);
+      nav.navigate('Tabs', { screen: 'MyReports' });
+    } catch (error) {
+      Alert.alert('Не удалось отправить заявку', errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   // --- Нет доступа к камере -------------------------------------------------
@@ -114,7 +164,7 @@ export default function NewReportScreen() {
       <ScreenHeader title="Новая заявка" />
       <ScrollView contentContainerStyle={[styles.form, { paddingBottom: insets.bottom + 24 }]} keyboardShouldPersistTaps="handled">
         <Image source={{ uri: photo.uri }} style={styles.preview} resizeMode="cover" />
-        <Pressable onPress={() => setPhoto(null)} style={styles.retake}>
+        <Pressable onPress={retakePhoto} style={styles.retake}>
           <Ionicons name="camera-reverse-outline" size={18} color={colors.primary} />
           <Text style={styles.retakeText}>Переснять</Text>
         </Pressable>
@@ -122,9 +172,14 @@ export default function NewReportScreen() {
         <View style={styles.row}>
           <Text style={styles.rowText}>Адрес: {addressText}</Text>
         </View>
-        {/* TODO: адрес и класс придут с сервера после проверки фото */}
         <View style={styles.row}>
-          <Text style={styles.rowText}>Категория ямы: Большая</Text>
+          <Text style={styles.rowText}>
+            Категория ямы: {detectedClass ?? (manualClass === 'big' ? 'Большая' : 'Маленькая')}
+          </Text>
+        </View>
+        <View style={styles.classChoices}>
+          <Button title="Большая" variant={manualClass === 'big' ? 'primary' : 'outline'} onPress={() => setManualClass('big')} />
+          <Button title="Маленькая" variant={manualClass === 'small' ? 'primary' : 'outline'} onPress={() => setManualClass('small')} />
         </View>
         {geoError && (
           <Text style={styles.geoErr}>Включите геолокацию в настройках телефона: без координат заявку не отправить.</Text>
@@ -139,7 +194,8 @@ export default function NewReportScreen() {
           textAlignVertical="top"
         />
         <View style={{ height: 24 }} />
-        <Button title="Создать заявку" onPress={submit} disabled={!coords} />
+        {busy && <ActivityIndicator color={colors.primary} />}
+        <Button title={busy ? 'Отправка…' : 'Создать заявку'} onPress={submit} disabled={!coords || busy} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -157,6 +213,7 @@ const styles = StyleSheet.create({
   shutterOuter: { width: 76, height: 76, borderRadius: 38, borderWidth: 4, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   shutterInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   form: { padding: 16, gap: 10 },
+  classChoices: { flexDirection: 'row', justifyContent: 'center', gap: 12 },
   preview: { height: 220, borderRadius: radius.md, backgroundColor: colors.surface },
   retake: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
   retakeText: { color: colors.primary, fontSize: fontSize.sm, fontWeight: '600' },

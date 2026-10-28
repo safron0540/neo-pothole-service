@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
-import { Icon } from './Icon';
-
+import { Dropdown } from './Dropdown';
 
 interface SelectBoxProps {
   value: string;
@@ -12,6 +11,8 @@ interface SelectBoxProps {
   className?: string;
   /** Классы самого поля (цвет, рамка, текст) — перекрывают стандартные */
   fieldClassName?: string;
+  /** Стрелка: сплошная из макета (по умолчанию) или тонкая — для компактных фильтров */
+  arrow?: 'arrow' | 'chevron';
 }
 
 // Выпадающий список по макету: серая рамка #9E9E9E, радиус 12, сплошная стрелка вниз справа
@@ -23,22 +24,19 @@ export function SelectBox({
   disabled,
   className = '',
   fieldClassName = '',
+  arrow = 'arrow',
 }: SelectBoxProps) {
   return (
-    <span className={`relative inline-block ${className}`}>
-      <select
-        aria-label={ariaLabel}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-        className={`h-full w-full cursor-pointer appearance-none truncate rounded-xl border border-neutral-400 bg-white py-1.5 pl-3 pr-9 text-sm font-normal text-neutral-800 outline-none transition-colors focus:border-red-700 disabled:cursor-not-allowed disabled:bg-neutral-100 ${fieldClassName}`}
-      >
-        {children}
-      </select>
-      <Icon
-        name="arrow-down"
-        className="pointer-events-none absolute right-3 top-1/2 h-[9px] w-[15px] -translate-y-1/2 text-neutral-800"
-      />
-    </span>
+    <Dropdown
+      value={value}
+      onChange={onChange}
+      ariaLabel={ariaLabel}
+      disabled={disabled}
+      arrow={arrow}
+      wrapperClassName={`relative inline-block ${className}`}
+      className={`h-full rounded-xl border border-neutral-400 bg-white py-1.5 pl-3 pr-3 text-sm font-normal text-neutral-800 hover:border-neutral-600 disabled:bg-neutral-100 ${fieldClassName}`}
+    >
+      {children}
+    </Dropdown>
   );
 }
