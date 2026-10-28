@@ -60,6 +60,8 @@ services:
       - photos:/data/photos:ro
       # Кэш тайлов карты переживает перезапуск nginx
       - tiles:/var/cache/nginx/tiles
+      # Демо-стенд мобильного приложения
+      - ./infra/mobile-demo:/usr/share/nginx/html/demo:ro
     ports:
       - "${NGINX_PORT:-8080}:80"
 
