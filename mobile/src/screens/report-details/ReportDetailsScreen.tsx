@@ -48,11 +48,20 @@ export default function ReportDetailsScreen() {
           </View>
           {report.createdAt && <Text style={styles.sub}>Подано {formatDate(report.createdAt)} в {formatTime(report.createdAt)}</Text>}
 
+          <Text style={styles.photoLabel}>Фото до ремонта</Text>
           <View style={styles.photo}>
             {report.photoBeforeUrl
               ? <Image source={{ uri: report.photoBeforeUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
               : <Ionicons name="image-outline" size={44} color={colors.primary} />}
           </View>
+          {report.photoAfterUrl && (
+            <>
+              <Text style={styles.photoLabel}>Фото после ремонта</Text>
+              <View style={styles.photo}>
+                <Image source={{ uri: report.photoAfterUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+              </View>
+            </>
+          )}
 
           <Text style={styles.line}>Адрес дефекта: <Text style={styles.bold}>{report.address ?? 'Не указан'}</Text></Text>
           <Text style={styles.line}>Класс ямы: <Text style={styles.bold}>{report.defectClass ?? 'Не указан'}</Text></Text>
@@ -85,6 +94,7 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: { fontSize: fontSize.sm, fontWeight: '600', color: colors.text },
   sub: { fontSize: fontSize.xs + 1, color: colors.textMuted },
+  photoLabel: { fontSize: fontSize.sm, fontWeight: '600', color: colors.text },
   photo: { height: 190, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginVertical: 6 },
   line: { fontSize: fontSize.sm, color: colors.textMuted },
   bold: { color: colors.text },
