@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { ANALYZE_TIMEOUT_MS } from '../config';
 import type { Report } from '../types';
 import { request } from './client';
@@ -37,14 +38,16 @@ export async function analyzePhoto(uri: string): Promise<AnalyzeResult> {
   const match = /\.(\w+)$/.exec(filename);
   const type = match ? `image/${match[1]}` : 'image/jpeg';
 
-  try {
-    // В Expo SDK 52+ для FormData нужен настоящий Blob, получаем его из uri снимка
+  if (Platform.OS === 'web') {
     const res = await fetch(uri);
+    if (!res.ok) throw new Error(`Не удалось прочитать фото: HTTP ${res.status}`);
     const blob = await res.blob();
     form.append('image', blob, filename);
-  } catch {
-    // Резервный вариант для старых сред React Native
-    form.append('image', { uri, name: filename, type } as any);
+  } else {
+    const nativeForm = form as FormData & {
+      append(name: string, value: { uri: string; name: string; type: string }): void;
+    };
+    nativeForm.append('image', { uri, name: filename, type });
   }
 
   return request<AnalyzeResult>('/photos/analyze', { method: 'POST', form, timeoutMs: ANALYZE_TIMEOUT_MS });
