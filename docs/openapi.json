@@ -1251,7 +1251,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_RequestSummary_"
+                  "$ref": "#/components/schemas/Page_CitizenRequestSummary_"
                 }
               }
             }
@@ -6938,6 +6938,70 @@
         ],
         "title": "CitizenRequestOut"
       },
+      "CitizenRequestSummary": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StatusOut"
+          },
+          "defect_class": {
+            "type": "string",
+            "enum": [
+              "big",
+              "small"
+            ],
+            "title": "Defect Class"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "detected_at": {
+            "type": "string",
+            "title": "Detected At"
+          },
+          "planned_due_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Due At"
+          },
+          "is_overdue": {
+            "type": "boolean",
+            "title": "Is Overdue"
+          },
+          "location": {
+            "$ref": "#/components/schemas/Point"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "defect_class",
+          "address",
+          "detected_at",
+          "planned_due_at",
+          "is_overdue",
+          "location"
+        ],
+        "title": "CitizenRequestSummary"
+      },
       "ClassChange": {
         "properties": {
           "defect_class": {
@@ -8587,6 +8651,37 @@
           "created_at"
         ],
         "title": "NotificationOut"
+      },
+      "Page_CitizenRequestSummary_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CitizenRequestSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[CitizenRequestSummary]"
       },
       "Page_DispatcherRequestSummary_": {
         "properties": {

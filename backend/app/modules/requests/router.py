@@ -15,6 +15,7 @@ from app.modules.requests import service
 from app.modules.requests.filters import RequestFilter
 from app.modules.requests.schemas import (
     CitizenRequestOut,
+    CitizenRequestSummary,
     ClassChange,
     ContractorAssign,
     ContractorRequestOut,
@@ -58,9 +59,14 @@ def create_request(
 
 
 @router.get(
-    "/me/requests", response_model=Page[RequestSummary], tags=["citizen"], summary="Мои заявки"
+    "/me/requests",
+    response_model=Page[CitizenRequestSummary],
+    tags=["citizen"],
+    summary="Мои заявки",
 )
-def my_requests(user: CitizenUser, paging: Paging, session: DbSession) -> Page[RequestSummary]:
+def my_requests(
+    user: CitizenUser, paging: Paging, session: DbSession
+) -> Page[CitizenRequestSummary]:
     return service.my_requests(session, user.id, paging)
 
 
