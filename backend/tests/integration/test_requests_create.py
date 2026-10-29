@@ -153,6 +153,7 @@ def test_my_requests_list_and_card(client, session, citizen):
     page = client.get(f"{API}/me/requests?limit=2", headers=citizen["headers"]).json()
     assert page["total"] == 3 and len(page["items"]) == 2
     assert page["items"][0]["id"] == ids[-1]  # новые сверху
+    assert page["items"][0]["location"] == {"lat": 60.0, "lon": 100.0}
     card = client.get(f"{API}/me/requests/{ids[0]}", headers=citizen["headers"]).json()
     assert card["location"] == {"lat": 60.0, "lon": 100.0}
     datetime.fromisoformat(card["detected_at"])

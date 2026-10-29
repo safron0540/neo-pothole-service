@@ -52,6 +52,10 @@ class RequestSummary(BaseModel):
     is_overdue: bool
 
 
+class CitizenRequestSummary(RequestSummary):
+    location: Point
+
+
 class CitizenRequestOut(RequestSummary):
     location: Point
     citizen_comment: str | None

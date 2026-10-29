@@ -39,6 +39,7 @@ from app.modules.requests.models import InternalNote, Request, RequestEvent
 from app.modules.requests.schemas import (
     Applicant,
     CitizenRequestOut,
+    CitizenRequestSummary,
     ClassChange,
     ContractorAssign,
     ContractorRequestOut,
@@ -909,11 +910,14 @@ def create_request(
 # --- Гражданин -------------------------------------------------------------------------
 
 
-def my_requests(session: Session, author_id: int, paging: Pagination) -> Page[RequestSummary]:
+def my_requests(
+    session: Session, author_id: int, paging: Pagination
+) -> Page[CitizenRequestSummary]:
     where = Request.author_id == author_id
     total = session.scalar(select(func.count()).select_from(Request).where(where))
-    rows = session.scalars(
-        select(Request)
+    point = cast(Request.location, Geometry)
+    rows = session.execute(
+        select(Request, func.ST_Y(point), func.ST_X(point))
         .where(where)
         .order_by(Request.detected_at.desc(), Request.id.desc())
         .limit(paging.limit)
@@ -921,7 +925,13 @@ def my_requests(session: Session, author_id: int, paging: Pagination) -> Page[Re
     )
     now = datetime.now(UTC)
     return Page(
-        items=[RequestSummary(**summary_fields(r, now)) for r in rows],
+        items=[
+            CitizenRequestSummary(
+                **summary_fields(request, now),
+                location=Point(lat=lat, lon=lon),
+            )
+            for request, lat, lon in rows
+        ],
         total=total,
         limit=paging.limit,
         offset=paging.offset,

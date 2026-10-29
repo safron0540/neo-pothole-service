@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { errorMessage, listAllMyRequests } from '../../api';
-import { TILE_URL } from '../../config';
+import { TILE_BASE_URL, TILE_URL } from '../../config';
 import { colors, fontSize, statusColors } from '../../theme';
 import type { Report } from '../../types';
 
@@ -27,11 +27,14 @@ map.attributionControl.setPrefix(false);
 L.tileLayer(${JSON.stringify(TILE_URL)}, {
   maxZoom: 19, attribution: '&copy; OpenStreetMap'
 }).addTo(map);
+var markers = [];
 reports.forEach(function (r) {
-  L.circleMarker([r.lat, r.lng], { radius: 11, color: '#fff', weight: 3, fillColor: r.color, fillOpacity: 1 })
+  var marker = L.circleMarker([r.lat, r.lng], { radius: 11, color: '#fff', weight: 3, fillColor: r.color, fillOpacity: 1 })
     .addTo(map)
     .on('click', function () { window.ReactNativeWebView.postMessage(String(r.id)); });
+  markers.push(marker);
 });
+if (markers.length) map.fitBounds(L.featureGroup(markers).getBounds(), { padding: [32, 32], maxZoom: 16 });
 </script></body></html>`;
 }
 
@@ -70,7 +73,7 @@ export default function MapScreen() {
       <WebView
         style={styles.flex}
         originWhitelist={['*']}
-        source={{ html, baseUrl: 'https://neo-service.local' }}
+        source={{ html, baseUrl: TILE_BASE_URL }}
         javaScriptEnabled
         onLoadEnd={() => setLoading(false)}
         onError={() => { setLoading(false); setFailed(true); }}
