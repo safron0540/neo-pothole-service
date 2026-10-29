@@ -1,3 +1,4 @@
+import { API_URL } from '../config';
 import type { Report, StatusEvent } from '../types';
 import type { StatusCode } from './types';
 
@@ -9,6 +10,13 @@ type Raw = Record<string, any>;
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+function toFullPhotoUrl(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  if (/^https?:\/\//i.test(path)) return path;
+  const base = API_URL.replace(/\/api\/v1\/?$/, '');
+  return `${base}${path.startsWith('/') ? '' : '/'}${path}`;
+}
 
 const statusLabels: Record<StatusCode, Report['status']> = {
   on_review: 'На проверке',
@@ -54,7 +62,7 @@ export function toReport(raw: Raw): Report {
       at: e.created_at ?? e.at,
       text: e.text ?? e.message ?? e.status?.label,
     })),
-    photoBeforeUrl: str(raw.photo_before_url),
-    photoAfterUrl: str(raw.photo_after_url),
+    photoBeforeUrl: toFullPhotoUrl(str(raw.photo_before_url)),
+    photoAfterUrl: toFullPhotoUrl(str(raw.photo_after_url)),
   };
 }

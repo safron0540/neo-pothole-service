@@ -18,7 +18,9 @@ import { colors, fontSize, radius } from '../../theme';
 interface Photo { uri: string; width: number; height: number }
 
 // ФТ-2: не ниже 1280×720 (учитываем любую ориентацию снимка).
-const isBigEnough = (p: Photo) => Math.max(p.width, p.height) >= 1280 && Math.min(p.width, p.height) >= 720;
+const isBigEnough = (p: Photo) =>
+  Platform.OS === 'web' ||
+  (Math.max(p.width, p.height) >= 1280 && Math.min(p.width, p.height) >= 720);
 const MAX_UPLOAD_DIMENSION = 1920;
 const JPEG_QUALITY = 0.75;
 
@@ -66,10 +68,33 @@ export default function NewReportScreen() {
   }, []);
 
   async function takePhoto() {
+    // В веб-браузере делаем мгновенный снимок кадра прямо с видеопотока веб-камеры через Canvas
+    if (Platform.OS === 'web') {
+      try {
+        const video = typeof document !== 'undefined' ? document.querySelector('video') : null;
+        if (video && video.videoWidth > 0) {
+          const canvas = document.createElement('canvas');
+          const targetW = Math.max(video.videoWidth, 1280);
+          const targetH = Math.max(Math.round(targetW * (video.videoHeight / video.videoWidth)), 720);
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            setPhoto({ uri: dataUrl, width: canvas.width, height: canvas.height });
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Web canvas photo error:', err);
+      }
+    }
+
     if (!cameraRef.current || busy) return;
     setBusy(true);
     try {
-      const p = await cameraRef.current.takePictureAsync({ quality: 1 });
+      const p = await cameraRef.current.takePictureAsync({ quality: 0.85 });
       if (!isBigEnough(p)) {
         Alert.alert('Фото слишком маленькое', 'Нужно фото не меньше 1280×720. Сделайте снимок ещё раз.');
         return;

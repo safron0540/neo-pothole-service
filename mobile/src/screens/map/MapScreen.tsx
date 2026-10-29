@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { errorMessage, listAllMyRequests } from '../../api';
@@ -31,7 +31,13 @@ var markers = [];
 reports.forEach(function (r) {
   var marker = L.circleMarker([r.lat, r.lng], { radius: 11, color: '#fff', weight: 3, fillColor: r.color, fillOpacity: 1 })
     .addTo(map)
-    .on('click', function () { window.ReactNativeWebView.postMessage(String(r.id)); });
+    .on('click', function () {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(String(r.id));
+      } else if (window.parent) {
+        window.parent.postMessage(String(r.id), '*');
+      }
+    });
   markers.push(marker);
 });
 if (markers.length) map.fitBounds(L.featureGroup(markers).getBounds(), { padding: [32, 32], maxZoom: 16 });
@@ -66,19 +72,39 @@ export default function MapScreen() {
     };
   }, []));
 
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const handler = (e: MessageEvent) => {
+      const id = Number(e.data);
+      if (Number.isFinite(id) && id > 0) {
+        nav.navigate('ReportDetails', { id });
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [nav]);
+
   const html = useMemo(() => buildHtml(reports), [reports]);
 
   return (
     <View style={styles.flex}>
-      <WebView
-        style={styles.flex}
-        originWhitelist={['*']}
-        source={{ html, baseUrl: TILE_BASE_URL }}
-        javaScriptEnabled
-        onLoadEnd={() => setLoading(false)}
-        onError={() => { setLoading(false); setFailed(true); }}
-        onMessage={(e) => nav.navigate('ReportDetails', { id: Number(e.nativeEvent.data) })}
-      />
+      {Platform.OS === 'web' ? (
+        <iframe
+          srcDoc={html}
+          style={{ width: '100%', height: '100%', border: 'none' }}
+          onLoad={() => setLoading(false)}
+        />
+      ) : (
+        <WebView
+          style={styles.flex}
+          originWhitelist={['*']}
+          source={{ html, baseUrl: TILE_BASE_URL }}
+          javaScriptEnabled
+          onLoadEnd={() => setLoading(false)}
+          onError={() => { setLoading(false); setFailed(true); }}
+          onMessage={(e) => nav.navigate('ReportDetails', { id: Number(e.nativeEvent.data) })}
+        />
+      )}
       {loading && (
         <View style={styles.overlay}><ActivityIndicator color={colors.primary} /></View>
       )}

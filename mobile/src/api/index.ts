@@ -31,17 +31,21 @@ export const getMe = () => request<Record<string, unknown>>('/me');
 
 // --- Фото и заявки ----------------------------------------------------------
 /** Шаг 1: проверка фото. Возвращает photo_id для шага 2. */
-export function analyzePhoto(uri: string): Promise<AnalyzeResult> {
+export async function analyzePhoto(uri: string): Promise<AnalyzeResult> {
   const form = new FormData();
   const filename = uri.split('/').pop() || 'photo.jpg';
   const match = /\.(\w+)$/.exec(filename);
   const type = match ? `image/${match[1]}` : 'image/jpeg';
 
-  form.append('image', {
-    uri,
-    name: filename,
-    type,
-  } as unknown as Blob);
+  try {
+    // В Expo SDK 52+ для FormData нужен настоящий Blob, получаем его из uri снимка
+    const res = await fetch(uri);
+    const blob = await res.blob();
+    form.append('image', blob, filename);
+  } catch {
+    // Резервный вариант для старых сред React Native
+    form.append('image', { uri, name: filename, type } as any);
+  }
 
   return request<AnalyzeResult>('/photos/analyze', { method: 'POST', form, timeoutMs: ANALYZE_TIMEOUT_MS });
 }

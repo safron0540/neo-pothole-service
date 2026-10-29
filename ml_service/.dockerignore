@@ -4,3 +4,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 tests/
+stub/
+# В образ нужна только итоговая модель: графики обучения, вторая модель и last.pt — лишние
+inference/runs_yolo/YOLO26_n/
+inference/runs_yolo/**/*.jpg
+inference/runs_yolo/**/*.png
+inference/runs_yolo/**/*.csv
+inference/runs_yolo/**/last.pt

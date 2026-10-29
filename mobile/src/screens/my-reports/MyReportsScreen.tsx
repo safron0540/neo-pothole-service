@@ -44,8 +44,8 @@ export default function MyReportsScreen() {
       ListEmptyComponent={!loading && !error ? <Text style={styles.empty}>Заявок пока нет. Нажмите «Новая заявка», чтобы сообщить о яме.</Text> : null}
       renderItem={({ item }) => (
         <Pressable style={styles.card} onPress={() => nav.navigate('ReportDetails', { id: item.id })}>
-          <View>
-            <Text style={styles.address}>{item.address ?? `Заявка №${item.id}`}</Text>
+          <View style={styles.cardInfo}>
+            <Text style={styles.address} numberOfLines={2}>{item.address ?? `Заявка №${item.id}`}</Text>
             {item.createdAt && <Text style={styles.date}>{formatDate(item.createdAt)}</Text>}
           </View>
           <StatusChip status={item.status} wide />
@@ -62,6 +62,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: colors.surface, borderRadius: radius.md, padding: 14,
   },
+  cardInfo: { flex: 1, marginRight: 10 },
   address: { fontSize: fontSize.sm, color: colors.text, fontWeight: '600' },
   date: { fontSize: fontSize.sm, color: colors.text, marginTop: 2 },
   empty: { textAlign: 'center', color: colors.textMuted, marginTop: 48, fontSize: fontSize.sm },

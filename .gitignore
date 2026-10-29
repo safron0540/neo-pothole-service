@@ -86,3 +86,6 @@ backups/
 
 # Резервные копии базы и фото (backend/scripts/backup.sh)
 /backups/
+
+# Статика демо-стенда мобильного приложения
+!infra/mobile-demo/**
